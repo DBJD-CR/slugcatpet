@@ -1,4 +1,5 @@
 """图集加载与裁切，支持 tint 着色。"""
+
 from __future__ import annotations
 import json
 from collections import OrderedDict
@@ -25,7 +26,7 @@ def resolve_assets_dir() -> Path:
 
 
 class Atlas:
-    _CACHE_CAP = 512   # LRU 上限
+    _CACHE_CAP = 512  # LRU 上限
 
     def __init__(self, name: str, base: Path):
         """name 不带扩展名，如 'rainWorld'。base 目录下需有 name(映射) + name.png(图)。"""
@@ -43,8 +44,9 @@ class Atlas:
     def _key(frame_name: str) -> str:
         return frame_name if frame_name.endswith(".png") else frame_name + ".png"
 
-    def sprite(self, frame_name: str, tint: QColor | None = None,
-               padded: bool = True) -> QPixmap:
+    def sprite(
+        self, frame_name: str, tint: QColor | None = None, padded: bool = True
+    ) -> QPixmap:
         """裁出某帧，tint 正片叠底着色；padded=True 还原原始画布。"""
         ck = (frame_name, tint.rgba() if tint else None, padded)
         if ck in self._cache:
@@ -55,6 +57,7 @@ class Atlas:
         sub = self.image.copy(fr["x"], fr["y"], fr["w"], fr["h"])
         if e.get("rotated"):
             from PySide6.QtGui import QTransform
+
             sub = sub.transformed(QTransform().rotate(-90))
         if tint is not None:
             sub = self._apply_tint(sub, tint)
@@ -69,7 +72,7 @@ class Atlas:
             sub = canvas
         pm = QPixmap.fromImage(sub)
         self._cache[ck] = pm
-        if len(self._cache) > self._CACHE_CAP:   # 超限淘汰最久未用
+        if len(self._cache) > self._CACHE_CAP:  # 超限淘汰最久未用
             self._cache.popitem(last=False)
         return pm
 
@@ -102,8 +105,12 @@ class Atlas:
 class AtlasSet:
     """统一管理多张图集，按 key 取图，并能反查帧在哪张图里。"""
 
-    KEYS = {"base": "rainWorld", "msc": "rainworldmsc",
-            "ui": "uiSprites", "uimsc": "uispritesmsc"}
+    KEYS = {
+        "base": "rainWorld",
+        "msc": "rainworldmsc",
+        "ui": "uiSprites",
+        "uimsc": "uispritesmsc",
+    }
 
     def __init__(self, base: Path | None = None):
         base = base or resolve_assets_dir()
@@ -115,8 +122,9 @@ class AtlasSet:
     def get(self, key: str) -> Atlas:
         return self.atlases[key]
 
-    def sprite(self, key: str, frame: str, tint: QColor | None = None,
-               padded: bool = True) -> QPixmap:
+    def sprite(
+        self, key: str, frame: str, tint: QColor | None = None, padded: bool = True
+    ) -> QPixmap:
         return self.atlases[key].sprite(frame, tint, padded)
 
     def source_size(self, key: str, frame: str) -> tuple[int, int]:

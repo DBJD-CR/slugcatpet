@@ -1,4 +1,5 @@
 """东张西望：兴趣衰减换目标，偶尔瞟随机点或谁也不看。"""
+
 from __future__ import annotations
 import math
 
@@ -9,8 +10,8 @@ class ObjectLooker:
     def __init__(self, rng, look_fac=1.0):
         self.rng = rng
         self.look_fac = look_fac
-        self.mode = "nothing"     # "cursor"/对象引用/"point"/"nothing"
-        self.point = None         # mode=="point" 时的冻结点
+        self.mode = "nothing"  # "cursor"/对象引用/"point"/"nothing"
+        self.point = None  # mode=="point" 时的冻结点
         self.point_interest = 0.0
         self.time_looking = 0
 
@@ -20,7 +21,7 @@ class ObjectLooker:
         interest = base
         if dist < tuning.LOOK_DIST_NEAR:
             interest *= 0.5 * vel + 1.5
-        denom = 0.005 * (dist ** 1.5) + 0.995
+        denom = 0.005 * (dist**1.5) + 0.995
         return interest / denom
 
     def _current_interest(self, head, candidates):
@@ -40,16 +41,26 @@ class ObjectLooker:
         """推进一 tick，返回当前 look 点或 None。"""
         self.time_looking += 1
         # 对象已消失 → 谁也不看
-        if self.mode not in ("nothing", "point") and not any(c[0] == self.mode for c in candidates):
+        if self.mode not in ("nothing", "point") and not any(
+            c[0] == self.mode for c in candidates
+        ):
             self._look_at_nothing()
         # 偶尔瞟屏幕随机点
         if self.rng.random() < tuning.LOOK_GLANCE_PROB * self.look_fac:
-            self.point = (self.rng.uniform(0.0, world_w), self.rng.uniform(0.0, world_h * 0.5))
+            self.point = (
+                self.rng.uniform(0.0, world_w),
+                self.rng.uniform(0.0, world_h * 0.5),
+            )
             self.point_interest = tuning.LOOK_GLANCE_INTEREST
             self.mode = "point"
             self.time_looking = 0
-        if self.time_looking > 1 and self.rng.random() < tuning.LOOK_UPDATE_PROB * self.look_fac:
-            bonus = 0.5 if self.time_looking < tuning.LOOK_INTEREST_DECAY_TICKS else -0.5
+        if (
+            self.time_looking > 1
+            and self.rng.random() < tuning.LOOK_UPDATE_PROB * self.look_fac
+        ):
+            bonus = (
+                0.5 if self.time_looking < tuning.LOOK_INTEREST_DECAY_TICKS else -0.5
+            )
             best = self._current_interest(head, candidates) + bonus
             for key, pt, base, vel in candidates:
                 hi = self._how_interesting(head, pt, base, vel)

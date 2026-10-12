@@ -1,9 +1,17 @@
 """首次启动素材初始化面板：run() 阻塞至成功或放弃。"""
+
 from __future__ import annotations
 from pathlib import Path
 
-from PySide6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout,
-                               QPushButton, QProgressBar, QFileDialog)
+from PySide6.QtWidgets import (
+    QWidget,
+    QLabel,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QProgressBar,
+    QFileDialog,
+)
 from PySide6.QtCore import Qt, QObject, QThread, QEventLoop, Signal
 from PySide6.QtGui import QGuiApplication
 
@@ -13,6 +21,7 @@ from ..i18n import t
 
 class _ImportWorker(QObject):
     """后台导入：install 为 None 走自动定位，否则从指定目录提取。"""
+
     done = Signal()
     failed = Signal(str)
 
@@ -29,7 +38,7 @@ class _ImportWorker(QObject):
             self.done.emit()
         except SetupError as e:
             self.failed.emit(str(e))
-        except Exception as e:                       # 兜底：意外异常也走错误态
+        except Exception as e:  # 兜底：意外异常也走错误态
             self.failed.emit(t("setup_unexpected", e=e))
 
 
@@ -41,9 +50,11 @@ class SetupPanel(QWidget):
         self._thread: QThread | None = None
         self._worker: _ImportWorker | None = None
 
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint
-                            | Qt.WindowType.WindowStaysOnTopHint
-                            | Qt.WindowType.Dialog)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Dialog
+        )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._build()
 
@@ -67,7 +78,7 @@ class SetupPanel(QWidget):
 
         self._bar = QProgressBar()
         self._bar.setObjectName("setupBar")
-        self._bar.setRange(0, 0)                      # 不确定态动画
+        self._bar.setRange(0, 0)  # 不确定态动画
         self._bar.setTextVisible(False)
         self._bar.setFixedHeight(6)
 
@@ -104,7 +115,8 @@ class SetupPanel(QWidget):
             "#btnPrimary{background:#6aa34a;color:#0f1a08;font-weight:600;border:none;}"
             "#btnPrimary:hover{background:#7cb45a;}"
             "#btnGhost{background:transparent;color:#9fc080;border:1px solid #4a5a3a;}"
-            "#btnGhost:hover{background:rgba(120,150,100,40);}")
+            "#btnGhost:hover{background:rgba(120,150,100,40);}"
+        )
 
     def _place(self):
         self._card.setFixedWidth(380)
@@ -113,8 +125,10 @@ class SetupPanel(QWidget):
         self.resize(size)
         self._card.setGeometry(0, 0, size.width(), size.height())
         scr = QGuiApplication.primaryScreen().availableGeometry()
-        self.move(scr.x() + (scr.width() - size.width()) // 2,
-                  scr.y() + (scr.height() - size.height()) // 3)
+        self.move(
+            scr.x() + (scr.width() - size.width()) // 2,
+            scr.y() + (scr.height() - size.height()) // 3,
+        )
 
     # 状态切换
     def _set_busy(self):

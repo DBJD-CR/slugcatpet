@@ -1,4 +1,5 @@
 """猫种族注册表：variant key → CatDef；未知 variant 回落 saint。"""
+
 from __future__ import annotations
 
 from .artificer import ARTIFICER_DEF

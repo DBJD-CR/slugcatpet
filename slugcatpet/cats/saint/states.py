@@ -1,4 +1,5 @@
 """Saint 独占状态挂载：按 caps 把超度与舌头系状态注册进 BehaviorFSM，关闭的能力不注册。"""
+
 from __future__ import annotations
 
 from ...behavior import tuning
@@ -7,7 +8,7 @@ from .climb import TongueClimber, CeilingHanger
 from .cursorlick import CursorLicker, RELICK_COOLDOWN
 from .dodgekill import KillDodger
 
-T_GRAB_TO_ASCEND = 200      # 被拎住这么久且满足超度门 → 直接超度
+T_GRAB_TO_ASCEND = 200  # 被拎住这么久且满足超度门 → 直接超度
 
 
 def mount(fsm):
@@ -51,7 +52,10 @@ def _mount_climb(fsm):
             fsm._transition("TongueClimb")
 
     def climb_enter():
-        fsm.climb = TongueClimber(fsm.win, getattr(fsm, "_wall_side", -1))
+        # roam：自由攀到顶后随机选位吊顶（不靠屏幕两端太近）
+        fsm.climb = TongueClimber(
+            fsm.win, getattr(fsm, "_wall_side", -1), roam=True, rng=fsm.rng
+        )
 
     def st_tongueclimb(cursor, disturbed):
         if fsm.grab.active:
@@ -63,7 +67,7 @@ def _mount_climb(fsm):
             fsm._transition("CeilingHang")
             return
         b = fsm.body
-        if b.swimming:            # 落水自救：划水朝正上方，合力出水
+        if b.swimming:  # 落水自救：划水朝正上方，合力出水
             b.swim_target = (b.chunk0.x, b.chunk0.y - 120.0)
         elif b.swim_target is not None:
             b.swim_target = None
@@ -101,10 +105,20 @@ def _mount_climb(fsm):
         fsm.climb = None
 
     fsm.register_state("RelocateToWall", enter=relocate_enter, tick=st_relocatetowall)
-    fsm.register_state("TongueClimb", enter=climb_enter, tick=st_tongueclimb,
-                       brk=brk, kill_break=kill_brk)
-    fsm.register_state("CeilingHang", enter=hang_enter, tick=st_ceilinghang,
-                       brk=brk, kill_break=kill_brk)
+    fsm.register_state(
+        "TongueClimb",
+        enter=climb_enter,
+        tick=st_tongueclimb,
+        brk=brk,
+        kill_break=kill_brk,
+    )
+    fsm.register_state(
+        "CeilingHang",
+        enter=hang_enter,
+        tick=st_ceilinghang,
+        brk=brk,
+        kill_break=kill_brk,
+    )
 
 
 def _mount_cursorlick(fsm):
@@ -134,7 +148,7 @@ def _mount_cursorlick(fsm):
         elif status == "to_airborne":
             brk()
             fsm._transition("Airborne")
-        elif (fsm.cursorlick.phase == "hang" and fsm.win.tongue.attached):
+        elif fsm.cursorlick.phase == "hang" and fsm.win.tongue.attached:
             pole = fsm._horizontal_pole_near(cursor)
             if pole is not None:
                 fsm.cursorlick = None
@@ -150,8 +164,9 @@ def _mount_cursorlick(fsm):
         fsm._dwell = 0
         fsm._relick_cooldown = RELICK_COOLDOWN
 
-    fsm.register_state("CursorLick", enter=enter, tick=st_cursorlick,
-                       brk=brk, kill_break=brk)
+    fsm.register_state(
+        "CursorLick", enter=enter, tick=st_cursorlick, brk=brk, kill_break=brk
+    )
 
 
 def _mount_dodgekill(fsm):
@@ -191,14 +206,17 @@ def _mount_dodgekill(fsm):
         fsm.gfx.hand_aim["l"] = None
         fsm.gfx.hand_aim["r"] = None
 
-    fsm.register_state("DodgeKill", enter=enter, tick=st_dodgekill,
-                       brk=brk, kill_break=brk)
+    fsm.register_state(
+        "DodgeKill", enter=enter, tick=st_dodgekill, brk=brk, kill_break=brk
+    )
 
 
 def _ascend_ready(fsm):
     """超度双门：业力满 + 好感疏远。"""
-    return (fsm.body.karma >= fsm.body.karma_max
-            and fsm.body.temper <= fsm.win.cat.tuning["temper_ascend_gate"])
+    return (
+        fsm.body.karma >= fsm.body.karma_max
+        and fsm.body.temper <= fsm.win.cat.tuning["temper_ascend_gate"]
+    )
 
 
 def _mount_ascension(fsm):
@@ -236,8 +254,13 @@ def _mount_ascension(fsm):
             return True
         return False
 
-    fsm.register_state("Ascension", enter=enter, tick=st_ascension,
-                       kill_break=kill_brk, fx=lambda: fsm.karma)
+    fsm.register_state(
+        "Ascension",
+        enter=enter,
+        tick=st_ascension,
+        kill_break=kill_brk,
+        fx=lambda: fsm.karma,
+    )
     fsm.drag_takeover = drag_takeover
     fsm.stun_takeover = stun_takeover
     fsm._interaction_blockers.add("Ascension")

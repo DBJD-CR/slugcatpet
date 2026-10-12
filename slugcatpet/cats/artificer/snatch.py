@@ -1,4 +1,5 @@
 """工匠低好感光标劫持 PyroMaul：光标经过后，移远≥2身位概率爆跳扑抓；贴身驻留3s直接走近啃；埋身啃咬一嘴后松开。"""
+
 from __future__ import annotations
 
 import math
@@ -8,25 +9,25 @@ from ...control.mouse import is_over
 from ...planning.jump_reach import SETTLE_MAX, SETTLE_VX
 from . import pyro
 
-BODY_LEN = 34.0          # 一个身位：chunk 间距 17 + 两端半径
+BODY_LEN = 34.0  # 一个身位：chunk 间距 17 + 两端半径
 OVER_PAD = 6.0
 POUNCE_PROB = 0.30
-COOLDOWN = 1200          # 30s，两种模式共用
-NEAR_DIST = BODY_LEN     # 贴身驻留门
-NEAR_TICKS = 120         # 3s
+COOLDOWN = 1200  # 30s，两种模式共用
+NEAR_DIST = BODY_LEN  # 贴身驻留门
+NEAR_TICKS = 120  # 3s
 NEAR_GIVEUP = BODY_LEN * 2.5
-NEAR_CATCH_R = 30.0      # 走近模式嘴-光标抓住判定
+NEAR_CATCH_R = 30.0  # 走近模式嘴-光标抓住判定
 POUNCE_MIN = BODY_LEN * 2.0
 POUNCE_MAX = 350.0
 POUNCE_MAX_RISE = 160.0  # 高于此够不到（vert/diag apex ~165）
-CATCH_R = 26.0           # 爆跳空中嘴-光标抓住判定
-HOLD_MAX = 400           # hold 看门狗上限
+CATCH_R = 26.0  # 爆跳空中嘴-光标抓住判定
+HOLD_MAX = 400  # hold 看门狗上限
 LAUNCH_TIMEOUT = 80
 APPROACH_TIMEOUT = 200
 MAUL_TIMEOUT = 600
-CHEW_TICKS = 60          # ~1.5s
-BITE_PERIOD = 8          # 原版 maul：每 8 tick 一口
-JITTER_PERIOD = 3        # 原版 maul：每 3 tick 身体微抖
+CHEW_TICKS = 60  # ~1.5s
+BITE_PERIOD = 8  # 原版 maul：每 8 tick 一口
+JITTER_PERIOD = 3  # 原版 maul：每 3 tick 身体微抖
 JITTER_AMP = 1.2
 
 
@@ -73,17 +74,30 @@ def mount_maul(fsm):
 
     def body_dist(cursor):
         c0, c1 = fsm.body.chunk0, fsm.body.chunk1
-        return min(math.hypot(cursor[0] - c0.x, cursor[1] - c0.y),
-                   math.hypot(cursor[0] - c1.x, cursor[1] - c1.y))
+        return min(
+            math.hypot(cursor[0] - c0.x, cursor[1] - c0.y),
+            math.hypot(cursor[0] - c1.x, cursor[1] - c1.y),
+        )
 
     def gates_ok():
         b = fsm.body
-        return (fsm.state == "IdleStand" and b.on_floor()
-                and not fsm.grab.active and not fsm._exhausted
-                and not fsm._zerog() and not b.swimming
-                and fsm.win.cursor_hijack is None
-                and b.carried_fruit is None and b.carried_stone is None
-                and b.temper <= temper_gate and fsm._pm_cooldown <= 0)
+        cursor = fsm.cursor
+        # 排除光标落在任务栏或地面过深盲区（嘴巴垂直无法企及）
+        if cursor is not None and cursor[1] > fsm.HL - 8.0:
+            return False
+        return (
+            fsm.state == "IdleStand"
+            and b.on_floor()
+            and not fsm.grab.active
+            and not fsm._exhausted
+            and not fsm._zerog()
+            and not b.swimming
+            and fsm.win.cursor_hijack is None
+            and b.carried_fruit is None
+            and b.carried_stone is None
+            and b.temper <= temper_gate
+            and fsm._pm_cooldown <= 0
+        )
 
     def release_hold():
         hj = fsm._pm_hj
@@ -98,6 +112,7 @@ def mount_maul(fsm):
         b = fsm.body
         b.animation = None
         b.jump_boost = 0.0
+        b.walk_speed_target = None
         b.stop_walk()
         fsm._pm_dirty = False
 
@@ -132,7 +147,7 @@ def mount_maul(fsm):
             if not fsm._pm_over:
                 fsm._pm_pass = True
                 fsm._pm_rolled = False
-            fsm._pm_near_t += 1      # 悬在身上也算 1 身位内
+            fsm._pm_near_t += 1  # 悬在身上也算 1 身位内
             if fsm._pm_near_t >= NEAR_TICKS:
                 trigger("walkup")
         elif cursor is None:
@@ -148,11 +163,15 @@ def mount_maul(fsm):
                 if d >= POUNCE_MIN and not fsm._pm_rolled:
                     fsm._pm_rolled = True
                     rise = fsm.body.chunk0.y - cursor[1]
-                    if (fsm.rng.random() < POUNCE_PROB and fuel_ok()
-                            and d <= POUNCE_MAX and rise <= POUNCE_MAX_RISE):
+                    if (
+                        fsm.rng.random() < POUNCE_PROB
+                        and fuel_ok()
+                        and d <= POUNCE_MAX
+                        and rise <= POUNCE_MAX_RISE
+                    ):
                         trigger("pounce")
                     else:
-                        fsm._pm_pass = False       # 本次经过作废
+                        fsm._pm_pass = False  # 本次经过作废
         fsm._pm_over = over
 
     def enter():
@@ -179,8 +198,9 @@ def mount_maul(fsm):
 
     def hold_lost():
         # 外部解除（Ctrl+Alt+Q/被顶替）
-        return (fsm._pm_hj is not None
-                and (fsm.win.cursor_hijack is not fsm._pm_hj or not fsm._pm_hj.active))
+        return fsm._pm_hj is not None and (
+            fsm.win.cursor_hijack is not fsm._pm_hj or not fsm._pm_hj.active
+        )
 
     def pin_to_mouth():
         mox, moy = fsm.gfx.mouth_world()
@@ -192,6 +212,7 @@ def mount_maul(fsm):
     def enter_chew(b):
         b.animation = None
         b.jump_boost = 0.0
+        b.walk_speed_target = None
         b.stop_walk()
         b.set_posture(False)
         fsm._pm_phase = "chew"
@@ -204,21 +225,41 @@ def mount_maul(fsm):
             return
         ph = fsm._pm_phase
         if ph == "approach":
-            if (cursor is None or body_dist(cursor) > NEAR_GIVEUP
-                    or fsm.timer > APPROACH_TIMEOUT):
+            if (
+                cursor is None
+                or body_dist(cursor) > NEAR_GIVEUP
+                or fsm.timer > APPROACH_TIMEOUT
+            ):
                 finish(b)
                 return
             fsm.gfx.look_at = cursor
             mox, moy = fsm.gfx.mouth_world()
-            if (math.hypot(cursor[0] - mox, cursor[1] - moy) <= NEAR_CATCH_R
-                    and fsm.win.cursor_hijack is None):
+            if (
+                math.hypot(cursor[0] - mox, cursor[1] - moy) <= NEAR_CATCH_R
+                and fsm.win.cursor_hijack is None
+            ):
                 fsm._pm_hj = fsm.win.start_cursor_hold(mox, moy, HOLD_MAX)
                 enter_chew(b)
                 return
-            b.walk_to(cursor[0])
+            dist_x = abs(cursor[0] - b.chunk1.x)
+            # 水平贴近光标：刹车停步，防在光标两侧反复掉头抽搐
+            if dist_x < 14.0:
+                b.stop_walk()
+                b.walk_speed_target = None
+                # 光标垂直差距过大或位于任务栏/地面盲区，果断放弃
+                if (
+                    abs(cursor[1] - moy) > NEAR_CATCH_R * 1.3
+                    or cursor[1] > fsm.HL - 8.0
+                ):
+                    finish(b)
+                    return
+            else:
+                b.walk_speed_target = 2.5 if dist_x < 28.0 else None
+                b.walk_to(cursor[0])
             return
         if ph == "settle":
             b.stop_walk()
+            b.walk_speed_target = None
             fsm._pm_settle += 1
             still = abs(b.chunk0.vx) < SETTLE_VX and abs(b.chunk1.vx) < SETTLE_VX
             if b.on_floor() and (still or fsm._pm_settle > SETTLE_MAX):
@@ -227,9 +268,8 @@ def mount_maul(fsm):
                     return
                 d = body_dist(cursor)
                 rise = b.chunk0.y - cursor[1]
-                if (d < POUNCE_MIN * 0.7 or d > POUNCE_MAX
-                        or rise > POUNCE_MAX_RISE):
-                    finish(b)          # 光标折回/跑太远=放弃
+                if d < POUNCE_MIN * 0.7 or d > POUNCE_MAX or rise > POUNCE_MAX_RISE:
+                    finish(b)  # 光标折回/跑太远=放弃
                     return
                 fsm._pm_ft = _fire_tick_for(d)
                 b.request_jump("stand")
@@ -252,7 +292,11 @@ def mount_maul(fsm):
                     b.move_dir = 1 if cursor[0] >= b.chunk0.x else -1
                 elif fsm._pm_hj is not None:
                     b.move_dir = 0
-                if fsm._pm_hj is None and cursor is not None and fsm.win.cursor_hijack is None:
+                if (
+                    fsm._pm_hj is None
+                    and cursor is not None
+                    and fsm.win.cursor_hijack is None
+                ):
                     mox, moy = fsm.gfx.mouth_world()
                     if math.hypot(cursor[0] - mox, cursor[1] - moy) <= CATCH_R:
                         fsm._pm_hj = fsm.win.start_cursor_hold(mox, moy, HOLD_MAX)
@@ -262,13 +306,13 @@ def mount_maul(fsm):
                 if fsm._pm_hj is not None:
                     enter_chew(b)
                 else:
-                    finish(b)          # 扑空放弃
+                    finish(b)  # 扑空放弃
             else:
                 fsm._pm_launch_t += 1
                 if fsm._pm_launch_t > LAUNCH_TIMEOUT:
                     finish(b)
             return
-        
+
         fsm._pm_chew_t += 1
         mox, moy = pin_to_mouth()
         fsm.gfx.look_at = (mox, moy)
@@ -294,5 +338,6 @@ def mount_maul(fsm):
         fsm._pm_cooldown = COOLDOWN
 
     fsm.register_ticker(watch)
-    fsm.register_state("PyroMaul", enter=enter, tick=st_pyromaul,
-                       brk=brk, kill_break=brk)
+    fsm.register_state(
+        "PyroMaul", enter=enter, tick=st_pyromaul, brk=brk, kill_break=brk
+    )

@@ -1,4 +1,5 @@
 """置顶保持：保住各窗 WS_EX_TOPMOST，前台变更事件即时重申 + 轮询兜底，只补丢失不越置顶同侪。"""
+
 from __future__ import annotations
 import sys
 
@@ -22,8 +23,14 @@ if _IS_WIN:
 
     # WinEvent 回调签名（win32 参数名）
     WINEVENTPROC = ctypes.WINFUNCTYPE(
-        None, wintypes.HANDLE, wintypes.DWORD, wintypes.HWND,
-        wintypes.LONG, wintypes.LONG, wintypes.DWORD, wintypes.DWORD,
+        None,
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.HWND,
+        wintypes.LONG,
+        wintypes.LONG,
+        wintypes.DWORD,
+        wintypes.DWORD,
     )
 
     try:
@@ -35,13 +42,23 @@ if _IS_WIN:
 
     _user32.SetWindowPos.restype = wintypes.BOOL
     _user32.SetWindowPos.argtypes = [
-        wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
-        ctypes.c_int, ctypes.c_int, wintypes.UINT,
+        wintypes.HWND,
+        wintypes.HWND,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        wintypes.UINT,
     ]
     _user32.SetWinEventHook.restype = wintypes.HANDLE
     _user32.SetWinEventHook.argtypes = [
-        wintypes.DWORD, wintypes.DWORD, wintypes.HMODULE, WINEVENTPROC,
-        wintypes.DWORD, wintypes.DWORD, wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HMODULE,
+        WINEVENTPROC,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
     ]
     _user32.UnhookWinEvent.restype = wintypes.BOOL
     _user32.UnhookWinEvent.argtypes = [wintypes.HANDLE]
@@ -52,15 +69,28 @@ if _IS_WIN:
 
     def _win_set_topmost(hwnd: int) -> None:
         # NOACTIVATE：置顶但不抢前台
-        _user32.SetWindowPos(wintypes.HWND(hwnd), wintypes.HWND(HWND_TOPMOST),
-                             0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+        _user32.SetWindowPos(
+            wintypes.HWND(hwnd),
+            wintypes.HWND(HWND_TOPMOST),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        )
 
     def _win_install_hook(callback):
         # 保活 proc 防 GC；SKIPOWNPROCESS 屏蔽自家窗
         proc = WINEVENTPROC(callback)
         hook = _user32.SetWinEventHook(
-            EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, None, proc, 0, 0,
-            WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS)
+            EVENT_SYSTEM_FOREGROUND,
+            EVENT_SYSTEM_FOREGROUND,
+            None,
+            proc,
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
+        )
         return proc, (int(hook) if hook else 0)
 
     def _win_remove_hook(hook) -> None:
@@ -70,15 +100,23 @@ if _IS_WIN:
 class TopmostKeeper:
     """维持一组窗置顶，仅在丢失样式时重申。"""
 
-    def __init__(self, windows, is_suspended=None, *,
-                 get_exstyle=None, set_topmost=None, install_hook=None, remove_hook=None):
+    def __init__(
+        self,
+        windows,
+        is_suspended=None,
+        *,
+        get_exstyle=None,
+        set_topmost=None,
+        install_hook=None,
+        remove_hook=None,
+    ):
         self._windows = list(windows)
         self._is_suspended = is_suspended or (lambda: False)
         if get_exstyle is None or set_topmost is None:
             if _IS_WIN:
                 get_exstyle = get_exstyle or _win_get_exstyle
                 set_topmost = set_topmost or _win_set_topmost
-            else:                                   # 非 Windows：恒真，reassert 空转
+            else:  # 非 Windows：恒真，reassert 空转
                 get_exstyle = get_exstyle or (lambda h: WS_EX_TOPMOST)
                 set_topmost = set_topmost or (lambda h: None)
         self._get_exstyle = get_exstyle
@@ -101,6 +139,24 @@ class TopmostKeeper:
                     continue
                 if not (self._get_exstyle(hwnd) & WS_EX_TOPMOST):
                     self._set_topmost(hwnd)
+            except Exception:
+                pass
+
+    def force_top(self):
+        """无条件把所有可见窗重新提到 TOPMOST 组顶部（解被其它置顶程序盖住）。"""
+        if self._is_suspended():
+            return
+        for w in reversed(self._windows):  # 逆序重申，后处理者更靠上
+            try:
+                if not w.isVisible():
+                    continue
+                raise_fn = getattr(w, "raise_", None)
+                if raise_fn is not None:
+                    raise_fn()  # 提升 Qt 内部 z 序
+                hwnd = int(w.winId())
+                if not hwnd:
+                    continue
+                self._set_topmost(hwnd)
             except Exception:
                 pass
 

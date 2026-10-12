@@ -1,4 +1,5 @@
 """零重力手操移动（控制路径专用，y↓），只做输入→意图，积分仍由 _step_zerog 负责。"""
+
 from __future__ import annotations
 
 import math
@@ -18,15 +19,15 @@ def ctrl_zerog_update(body) -> None:
     elif inp0.x < 0:
         body.facing = -1
     on_wall = body.canJump > 0
-    ix, iy = float(inp0.x), float(-inp0.y)          # y 翻号
+    ix, iy = float(inp0.x), float(-inp0.y)  # y 翻号
     if ix != 0.0 or iy != 0.0:
         d = math.hypot(ix, iy)
         ux, uy = ix / d, iy / d
         body.zerog_swim(ux, uy, on_wall)
-        if on_wall and body._ctrl_want_jump > 0:    # 贴墙跳，消费 want
+        if on_wall and body._ctrl_want_jump > 0:  # 贴墙跳，消费 want
             body.request_zerog_kick(ux, uy)
             body._ctrl_want_jump = 0
-    elif on_wall and body._ctrl_want_jump > 0:      # 无方向蹬墙，退化为纯背离法向
+    elif on_wall and body._ctrl_want_jump > 0:  # 无方向蹬墙，退化为纯背离法向
         body.request_zerog_kick()
         body._ctrl_want_jump = 0
     # 工匠爆跳钩子

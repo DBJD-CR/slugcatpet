@@ -1,4 +1,5 @@
 """跳跃够取能力（全员）：走到起跳点→驻停→按档起跳，竖直或持向横弧；空中探身+持向漂移，落地报 done。"""
+
 from __future__ import annotations
 
 from ..behavior import tuning
@@ -7,7 +8,7 @@ from .ability import Ability, Estimate, RUNNING, DONE, GIVEUP, reach_assist, wal
 from .jump_arc import get_arc, sweep_hit
 
 SETTLE_VX = 0.3
-SETTLE_MAX = 40      # 驻停等待上限，超时按当前状态起跳
+SETTLE_MAX = 40  # 驻停等待上限，超时按当前状态起跳
 # 预留走位残差，防"规划说行/临跳说不行"死循环
 PLAN_HIT_RADIUS = tuning.GRAB_REACH - tuning.PLAN_JUMP_TAKEOFF_EPS
 
@@ -37,7 +38,11 @@ class JumpReach(Ability):
 
         def consider(lx, hold, md, hit):
             nonlocal best, best_t
-            t = abs(hipx - lx) / tuning.PLAN_WALK_SPEED + hit + tuning.PLAN_STARTUP_TICKS
+            t = (
+                abs(hipx - lx) / tuning.PLAN_WALK_SPEED
+                + hit
+                + tuning.PLAN_STARTUP_TICKS
+            )
             if best_t is None or t < best_t:
                 best_t = t
                 best = (lx, hold, md, hit)
@@ -51,8 +56,9 @@ class JumpReach(Ability):
                     consider(gx, hold, 0, hit)
             for md in (1, -1):
                 arc = get_arc(stats, hold, md)
-                lh = _free_launch_hit(arc, gx, gy, floor - arc.takeoff_h,
-                                      xmin, xmax, PLAN_HIT_RADIUS)
+                lh = _free_launch_hit(
+                    arc, gx, gy, floor - arc.takeoff_h, xmin, xmax, PLAN_HIT_RADIUS
+                )
                 if lh is not None:
                     lx, hit = lh
                     consider(lx, hold, md, hit)
@@ -66,8 +72,9 @@ class JumpReach(Ability):
             return None
         _, _, md, hit, t = plan
         walk_t = t - hit - tuning.PLAN_STARTUP_TICKS
-        return Estimate(t, walk_t * tuning.PLAN_EN_RATE_LIGHT
-                        + hit * tuning.PLAN_EN_RATE_VIGOROUS)
+        return Estimate(
+            t, walk_t * tuning.PLAN_EN_RATE_LIGHT + hit * tuning.PLAN_EN_RATE_VIGOROUS
+        )
 
     def make_controller(self, goal):
         return JumpReachController(self.pet, goal)
@@ -96,8 +103,10 @@ class JumpReachController:
         xmin, xmax = walk_band(pet)
         lx = clampf(self._launch_x, xmin, xmax)
         if self.phase == "walk":
-            if (body.on_floor()
-                    and abs(body.chunk1.x - lx) <= tuning.PLAN_JUMP_TAKEOFF_EPS):
+            if (
+                body.on_floor()
+                and abs(body.chunk1.x - lx) <= tuning.PLAN_JUMP_TAKEOFF_EPS
+            ):
                 body.stop_walk()
                 self.phase = "settle"
                 return RUNNING
@@ -106,8 +115,7 @@ class JumpReachController:
         if self.phase == "settle":
             body.stop_walk()
             self._settle += 1
-            still = (abs(body.chunk0.vx) < SETTLE_VX
-                     and abs(body.chunk1.vx) < SETTLE_VX)
+            still = abs(body.chunk0.vx) < SETTLE_VX and abs(body.chunk1.vx) < SETTLE_VX
             if body.on_floor() and (still or self._settle > SETTLE_MAX):
                 pick = self._pick_at_launch(gx, gy)
                 if pick is None:
@@ -132,13 +140,24 @@ class JumpReachController:
         c0 = self.pet.body.chunk0
         stats = self.pet.cat.stats
         for hold in tuning.PLAN_JUMP_HOLD_GEARS:
-            if sweep_hit(get_arc(stats, hold, 0),
-                         gx - c0.x, gy - c0.y, tuning.GRAB_REACH) is not None:
+            if (
+                sweep_hit(
+                    get_arc(stats, hold, 0), gx - c0.x, gy - c0.y, tuning.GRAB_REACH
+                )
+                is not None
+            ):
                 return hold, 0
         for md in (1, -1):
             for hold in tuning.PLAN_JUMP_HOLD_GEARS:
-                if sweep_hit(get_arc(stats, hold, md),
-                             gx - c0.x, gy - c0.y, tuning.GRAB_REACH) is not None:
+                if (
+                    sweep_hit(
+                        get_arc(stats, hold, md),
+                        gx - c0.x,
+                        gy - c0.y,
+                        tuning.GRAB_REACH,
+                    )
+                    is not None
+                ):
                     return hold, md
         return None
 

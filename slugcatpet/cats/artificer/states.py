@@ -1,4 +1,5 @@
 """Artificer 独占状态挂载：caps.pyro → 燃料回落 ticker + PyroRomp 爆跳撒欢态 + mood 候选。"""
+
 from __future__ import annotations
 
 from ...behavior import tuning
@@ -8,9 +9,9 @@ from ...planning.backflip_reach import SETTLE_MAX, SETTLE_VX
 from ...planning.jump_arc import PYRO_INPUTS
 from . import pyro
 
-ARRIVE_X = 8.0           # px
-LAUNCH_TIMEOUT = 80      # 起跳未腾空兜底 tick（被顶/卡住）
-ROMP_TIMEOUT = 1200      # tick，仿 T_HPOLE_TIMEOUT 量级
+ARRIVE_X = 8.0  # px
+LAUNCH_TIMEOUT = 80  # 起跳未腾空兜底 tick（被顶/卡住）
+ROMP_TIMEOUT = 1200  # tick，仿 T_HPOLE_TIMEOUT 量级
 
 
 def mount(fsm):
@@ -20,6 +21,7 @@ def mount(fsm):
         fsm.register_ticker(lambda: pyro.tick_fuel(fsm.win, fsm.body))
         _mount_pyroromp(fsm)
         from .snatch import mount_maul
+
         mount_maul(fsm)
 
 
@@ -66,8 +68,9 @@ def _mount_pyroromp(fsm):
             return
         ph = fsm._romp_phase
         if ph == "walk":
-            if b.on_floor() and (not b.is_moving()
-                                 or abs(b.chunk1.x - fsm._romp_x) < ARRIVE_X):
+            if b.on_floor() and (
+                not b.is_moving() or abs(b.chunk1.x - fsm._romp_x) < ARRIVE_X
+            ):
                 b.stop_walk()
                 fsm._romp_phase = "settle"
             return
@@ -96,7 +99,7 @@ def _mount_pyroromp(fsm):
         elif fsm._romp_airborne:
             b.animation = None
             b.jump_boost = 0.0
-            b.set_posture(True)          # 落地扶正
+            b.set_posture(True)  # 落地扶正
             fsm._romp_jumps += 1
             if fsm._romp_jumps >= tuning.PYROROMP_JUMPS or not fuel_ok(1):
                 finish(b)
@@ -130,8 +133,14 @@ def _mount_pyroromp(fsm):
             clear_motion()
 
     fsm.register_ticker(leak_watch)
-    fsm.register_state("PyroRomp", enter=enter, tick=st_pyroromp,
-                       brk=brk, kill_break=brk, mood="pyro_romp")
+    fsm.register_state(
+        "PyroRomp",
+        enter=enter,
+        tick=st_pyroromp,
+        brk=brk,
+        kill_break=brk,
+        mood="pyro_romp",
+    )
 
     mult = play_mult(fsm.pers, "pyro_romp")
     energy_gate = play_gate(fsm.pers)
@@ -139,14 +148,25 @@ def _mount_pyroromp(fsm):
     def gate(ctx):
         # 燃料门 counter+全轮跳数≤heat_cap；泳/零重力退避；体力过门
         pyro.ensure(fsm.body)
-        return (not ctx.submerged and not getattr(fsm.body, "zerog", False)
-                and ctx.energy >= energy_gate
-                and fsm.body._ctrl_pyro_counter + tuning.PYROROMP_JUMPS <= heat_cap)
+        return (
+            not ctx.submerged
+            and not getattr(fsm.body, "zerog", False)
+            and ctx.energy >= energy_gate
+            and fsm.body._ctrl_pyro_counter + tuning.PYROROMP_JUMPS <= heat_cap
+        )
 
-    fsm.mood.add(Candidate(
-        "pyro_romp", base=tuning.PYROROMP_BASE * mult,
-        start=tuning.PYROROMP_START, quit=tuning.PYROROMP_QUIT,
-        decay=tuning.PYROROMP_DECAY, recover=tuning.PYROROMP_RECOVER,
-        gate=gate,
-        energy_factor=lambda e: 1.0, temper_factor=lambda t: 1.0,
-        one_shot=True, init=tuning.PYROROMP_INIT))
+    fsm.mood.add(
+        Candidate(
+            "pyro_romp",
+            base=tuning.PYROROMP_BASE * mult,
+            start=tuning.PYROROMP_START,
+            quit=tuning.PYROROMP_QUIT,
+            decay=tuning.PYROROMP_DECAY,
+            recover=tuning.PYROROMP_RECOVER,
+            gate=gate,
+            energy_factor=lambda e: 1.0,
+            temper_factor=lambda t: 1.0,
+            one_shot=True,
+            init=tuning.PYROROMP_INIT,
+        )
+    )

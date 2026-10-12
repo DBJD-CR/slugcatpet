@@ -1,4 +1,5 @@
 """挡路几何纯函数：判 blocker 是否挡在 walker 通往目标的路上，及被顶方顺向让路点。无副作用、可脱离 Qt 单测。"""
+
 from __future__ import annotations
 
 from ..core.creature import WALK_STOP_EPS

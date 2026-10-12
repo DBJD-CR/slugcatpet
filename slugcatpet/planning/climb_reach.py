@@ -1,12 +1,17 @@
 """爬墙辅助舌取能力：走到近墙→TongueClimber 拉升缩距→入射程转舌取。"""
+
 from __future__ import annotations
 import math
 
 from ..behavior import tuning
 from ..core.units import clampf
 from .ability import Ability, Estimate, RUNNING, GIVEUP, walk_band
-from .tongue_reach import (TongueApproachController, mouth_pos, reset_tongue,
-                           tongue_fire_range)
+from .tongue_reach import (
+    TongueApproachController,
+    mouth_pos,
+    reset_tongue,
+    tongue_fire_range,
+)
 
 CLIMB_ASSIST_MAX = 600
 WALL_ARRIVE = 12.0
@@ -30,13 +35,20 @@ class ClimbReach(Ability):
             spread = math.sqrt(rng * rng - dxw * dxw)
             y_need = clampf(gy + spread, 0.0, floor)
             climb_t = max(0.0, pet.body.chunk0.y - y_need) / tuning.PLAN_CLIMB_SPEED
-            walk_t = (abs(pet.body.chunk1.x - clampf(wall_x, xmin, xmax))
-                      / tuning.PLAN_WALK_SPEED)
-            light_t = (walk_t + dxw / tuning.PLAN_TONGUE_SPEED
-                       + 2.0 * tuning.PLAN_STARTUP_TICKS)
+            walk_t = (
+                abs(pet.body.chunk1.x - clampf(wall_x, xmin, xmax))
+                / tuning.PLAN_WALK_SPEED
+            )
+            light_t = (
+                walk_t
+                + dxw / tuning.PLAN_TONGUE_SPEED
+                + 2.0 * tuning.PLAN_STARTUP_TICKS
+            )
             t = light_t + climb_t
-            e = (light_t * tuning.PLAN_EN_RATE_LIGHT
-                 + climb_t * tuning.PLAN_EN_RATE_VIGOROUS)
+            e = (
+                light_t * tuning.PLAN_EN_RATE_LIGHT
+                + climb_t * tuning.PLAN_EN_RATE_VIGOROUS
+            )
             if best is None or t < best.time_est:
                 best = Estimate(t, e)
         return best
@@ -87,6 +99,7 @@ class ClimbAssistController:
                 return RUNNING
             body.stop_walk()
             from ..cats.saint.climb import TongueClimber
+
             self._climber = TongueClimber(pet, self._side)
             return RUNNING
 

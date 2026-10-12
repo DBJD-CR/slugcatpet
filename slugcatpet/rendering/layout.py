@@ -1,4 +1,5 @@
 """按 CatDef.layout_file 加载部件基准摆位，物理/动画在此之上偏移。"""
+
 from __future__ import annotations
 import json
 from dataclasses import dataclass, field
@@ -14,7 +15,7 @@ DEFAULT_PATH = LAYOUTS_DIR / default_def().layout_file
 class Part:
     frame: str
     atlas: str
-    x: float = 0.0       # 逻辑画布坐标（左上原点，y 向下）
+    x: float = 0.0  # 逻辑画布坐标（左上原点，y 向下）
     y: float = 0.0
     z: int = 0
     mirror: bool = False
@@ -27,8 +28,10 @@ class Part:
 
 @dataclass
 class Layout:
-    tint: list = field(default_factory=lambda: list(default_def().body_color))  # 无 json 时的回退体色
-    canvas_scale: int = 2                                        # 整数倍放大，保像素清晰
+    tint: list = field(
+        default_factory=lambda: list(default_def().body_color)
+    )  # 无 json 时的回退体色
+    canvas_scale: int = 2  # 整数倍放大，保像素清晰
     canvas_w: int = 56
     canvas_h: int = 70
     parts: list = field(default_factory=list)

@@ -1,7 +1,15 @@
 """共享渲染原语：软绳/带状/三角网格/atlas sprite 绘制。"""
+
 from __future__ import annotations
 import math
-from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF
+from PySide6.QtGui import (
+    QColor,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPolygonF,
+)
 from PySide6.QtCore import QPointF, Qt
 
 
@@ -33,7 +41,7 @@ def draw_rope(painter, points, widths, color) -> None:
     for q in reversed(right):
         path.lineTo(q)
     path.closeSubpath()
-    path.setFillRule(Qt.FillRule.WindingFill)            # 防自交留洞
+    path.setFillRule(Qt.FillRule.WindingFill)  # 防自交留洞
 
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -46,11 +54,12 @@ def draw_rope(painter, points, widths, color) -> None:
     painter.restore()
 
 
-def blit(painter, atlas, element, x, y, rotation, scale_x, scale_y, color,
-         ax=0.5, ay=0.5) -> None:
+def blit(
+    painter, atlas, element, x, y, rotation, scale_x, scale_y, color, ax=0.5, ay=0.5
+) -> None:
     """画 atlas sprite；锚点 (ax,ay) 归一化，钉在 (x,y)。"""
     key = atlas.find_atlas(element)
-    if key is None:                                # 缺帧静默跳过
+    if key is None:  # 缺帧静默跳过
         return
     col = color if isinstance(color, QColor) else QColor(*color)
     pm = atlas.sprite(key, element, col)
@@ -65,18 +74,51 @@ def blit(painter, atlas, element, x, y, rotation, scale_x, scale_y, color,
     painter.restore()
 
 
-def draw_fruit(painter, atlas, x, y, rot_deg, bites,
-               flesh_color=(0, 0, 255), outline_color=(0, 0, 0),
-               scalex=1.0, scaley=1.0) -> None:
+def draw_fruit(
+    painter,
+    atlas,
+    x,
+    y,
+    rot_deg,
+    bites,
+    flesh_color=(0, 0, 255),
+    outline_color=(0, 0, 0),
+    scalex=1.0,
+    scaley=1.0,
+) -> None:
     """果子两层叠加（A 底 / B 上），k=clamp(3-bites,0,2)。"""
     k = int(max(0, min(2, 3 - bites)))
-    blit(painter, atlas, f"DangleFruit{k}A", x, y, rot_deg, scalex, scaley,
-         outline_color, ax=0.5, ay=0.5)
-    blit(painter, atlas, f"DangleFruit{k}B", x, y, rot_deg, scalex, scaley,
-         flesh_color, ax=0.5, ay=0.5)
+    blit(
+        painter,
+        atlas,
+        f"DangleFruit{k}A",
+        x,
+        y,
+        rot_deg,
+        scalex,
+        scaley,
+        outline_color,
+        ax=0.5,
+        ay=0.5,
+    )
+    blit(
+        painter,
+        atlas,
+        f"DangleFruit{k}B",
+        x,
+        y,
+        rot_deg,
+        scalex,
+        scaley,
+        flesh_color,
+        ax=0.5,
+        ay=0.5,
+    )
 
 
-def draw_stone(painter, atlas, x, y, rot_deg, frame, color=(70, 72, 78), scale=1.0) -> None:
+def draw_stone(
+    painter, atlas, x, y, rot_deg, frame, color=(70, 72, 78), scale=1.0
+) -> None:
     """石头：Pebble1..14 帧，中心锚 (0.5,0.5)。"""
     blit(painter, atlas, frame, x, y, rot_deg, scale, scale, color, ax=0.5, ay=0.5)
 
@@ -85,9 +127,13 @@ def draw_stone_trail(painter, x, y, ux, uy, length, halfwidth, color, alpha) -> 
     """抛石运动拖尾：宽端在石头、沿 -(ux,uy) 收成尖的半透明三角。"""
     nx, ny = -uy, ux
     tailx, taily = x - ux * length, y - uy * length
-    poly = QPolygonF([QPointF(x + nx * halfwidth, y + ny * halfwidth),
-                      QPointF(x - nx * halfwidth, y - ny * halfwidth),
-                      QPointF(tailx, taily)])
+    poly = QPolygonF(
+        [
+            QPointF(x + nx * halfwidth, y + ny * halfwidth),
+            QPointF(x - nx * halfwidth, y - ny * halfwidth),
+            QPointF(tailx, taily),
+        ]
+    )
     col = QColor(color if isinstance(color, QColor) else QColor(*color))
     col.setAlpha(alpha)
     painter.save()
@@ -125,10 +171,11 @@ def ribbon(painter, points, halfwidths, colors) -> None:
     for q in reversed(right):
         path.lineTo(q)
     path.closeSubpath()
-    path.setFillRule(Qt.FillRule.WindingFill)        # 防自交留洞
+    path.setFillRule(Qt.FillRule.WindingFill)  # 防自交留洞
 
-    grad = QLinearGradient(QPointF(points[0][0], points[0][1]),
-                           QPointF(points[-1][0], points[-1][1]))
+    grad = QLinearGradient(
+        QPointF(points[0][0], points[0][1]), QPointF(points[-1][0], points[-1][1])
+    )
     for i, c in enumerate(colors):
         grad.setColorAt(i / (n - 1), QColor(*c))
 
@@ -149,7 +196,7 @@ def mesh(painter, verts, tris, vcolors, outline: bool = True) -> None:
     if not outline:
         painter.setPen(Qt.PenStyle.NoPen)
     n = len(verts)
-    for (i, j, k) in tris:
+    for i, j, k in tris:
         if i >= n or j >= n or k >= n:
             continue
         vi, vj, vk = verts[i], verts[j], verts[k]
@@ -164,8 +211,8 @@ def mesh(painter, verts, tris, vcolors, outline: bool = True) -> None:
             # 同色细描边封住 AA 接缝
             painter.setPen(QPen(col, 0.5))
         painter.setBrush(col)
-        poly = QPolygonF([QPointF(vi[0], vi[1]),
-                          QPointF(vj[0], vj[1]),
-                          QPointF(vk[0], vk[1])])
+        poly = QPolygonF(
+            [QPointF(vi[0], vi[1]), QPointF(vj[0], vj[1]), QPointF(vk[0], vk[1])]
+        )
         painter.drawPolygon(poly)
     painter.restore()

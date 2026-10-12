@@ -1,4 +1,5 @@
 """竖/横杆几何实体；攀爬逻辑见 pole_climb.py。"""
+
 from __future__ import annotations
 
 from .enums import ItemState
@@ -29,11 +30,11 @@ class Pole:
     # ── 竖杆便捷访问 ──
     @property
     def x(self) -> float:
-        return self.bx          # 竖杆 x
+        return self.bx  # 竖杆 x
 
     @property
     def top_y(self) -> float:
-        return self.by          # 顶端（y 较小）
+        return self.by  # 顶端（y 较小）
 
     def step(self, WL: float, HL: float) -> None:
         """静态，无积分。"""

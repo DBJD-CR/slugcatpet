@@ -1,4 +1,5 @@
 """溺水气泡粒子（y↓）。"""
+
 from __future__ import annotations
 import math
 
@@ -12,6 +13,7 @@ FULL_SIZE_MAX = 1.5
 
 class Bubble:
     """单个气泡。"""
+
     __slots__ = ("x", "y", "last_x", "last_y", "vx", "vy", "full_size", "age")
 
     def __init__(self, x, y, vx, vy, rng):
@@ -27,10 +29,10 @@ class Bubble:
         self.last_x, self.last_y = self.x, self.y
         self.vx *= DRAG
         self.vy *= DRAG
-        deg = math.radians(-90.0 + 180.0 * rng.random())    # 指向上半圆
+        deg = math.radians(-90.0 + 180.0 * rng.random())  # 指向上半圆
         mag = rng.random() * BUOYANCY_MAG
         self.vx += math.sin(deg) * mag
-        self.vy += -math.cos(deg) * mag                     # y↓ 取反
+        self.vy += -math.cos(deg) * mag  # y↓ 取反
         self.x += self.vx
         self.y += self.vy
         self.age += 1

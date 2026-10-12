@@ -1,4 +1,5 @@
 """后空翻够取（caps.acrobat）：走到起跳点→驻停→boosted backflip_launch 高后空翻弧命中普通跳够不到的高/远目标；落地报 done。"""
+
 from __future__ import annotations
 
 from ..behavior import tuning
@@ -7,7 +8,7 @@ from .ability import Ability, Estimate, RUNNING, DONE, GIVEUP, reach_assist, wal
 from .jump_arc import get_arc, get_backflip_arc
 from .jump_reach import JumpReach, PLAN_HIT_RADIUS, SETTLE_MAX, SETTLE_VX
 
-TOP_CLEAR = 20.0     # 窗顶余量：高于此线视为被 clamp，弃解
+TOP_CLEAR = 20.0  # 窗顶余量：高于此线视为被 clamp，弃解
 
 
 def takeoff_c0_h(stats):
@@ -25,8 +26,11 @@ def best_launch_hit(arc, gx, gy, launch_y, xmin, xmax, radius, hipx):
         lx = gx - px
         if not (xmin <= lx <= xmax) or abs((launch_y + py) - gy) > radius:
             continue
-        t = (abs(hipx - lx) / tuning.PLAN_WALK_SPEED
-             + (i + 1) + tuning.PLAN_STARTUP_TICKS)
+        t = (
+            abs(hipx - lx) / tuning.PLAN_WALK_SPEED
+            + (i + 1)
+            + tuning.PLAN_STARTUP_TICKS
+        )
         if best_t is None or t < best_t:
             best_t = t
             best = (lx, i + 1, t)
@@ -63,8 +67,16 @@ class BackflipReach(Ability):
         hipx = body.chunk1.x
         best = None
         for d in (1, -1):
-            r = best_launch_hit(get_backflip_arc(stats, d, boosted=True), gx, gy,
-                                launch_y, xmin, xmax, PLAN_HIT_RADIUS, hipx)
+            r = best_launch_hit(
+                get_backflip_arc(stats, d, boosted=True),
+                gx,
+                gy,
+                launch_y,
+                xmin,
+                xmax,
+                PLAN_HIT_RADIUS,
+                hipx,
+            )
             if r is not None and (best is None or r[2] < best[3]):
                 best = (r[0], d, r[1], r[2])
         return best
@@ -75,8 +87,9 @@ class BackflipReach(Ability):
             return None
         _, _, hit, t = plan
         walk_t = t - hit - tuning.PLAN_STARTUP_TICKS
-        return Estimate(t, walk_t * tuning.PLAN_EN_RATE_LIGHT
-                        + hit * tuning.PLAN_EN_RATE_VIGOROUS)
+        return Estimate(
+            t, walk_t * tuning.PLAN_EN_RATE_LIGHT + hit * tuning.PLAN_EN_RATE_VIGOROUS
+        )
 
     def make_controller(self, goal):
         return BackflipReachController(self.pet, goal)
@@ -105,8 +118,10 @@ class BackflipReachController:
         xmin, xmax = walk_band(pet)
         lx = clampf(self._launch_x, xmin, xmax)
         if self.phase == "walk":
-            if (body.on_floor()
-                    and abs(body.chunk1.x - lx) <= tuning.PLAN_JUMP_TAKEOFF_EPS):
+            if (
+                body.on_floor()
+                and abs(body.chunk1.x - lx) <= tuning.PLAN_JUMP_TAKEOFF_EPS
+            ):
                 body.stop_walk()
                 self.phase = "settle"
                 return RUNNING
@@ -115,8 +130,7 @@ class BackflipReachController:
         if self.phase == "settle":
             body.stop_walk()
             self._settle += 1
-            still = (abs(body.chunk0.vx) < SETTLE_VX
-                     and abs(body.chunk1.vx) < SETTLE_VX)
+            still = abs(body.chunk0.vx) < SETTLE_VX and abs(body.chunk1.vx) < SETTLE_VX
             if body.on_floor() and (still or self._settle > SETTLE_MAX):
                 d = self._pick_at_launch(gx, gy)
                 if d is None:
@@ -140,8 +154,16 @@ class BackflipReachController:
         stats = self.pet.cat.stats
         first = 1 if gx >= c0.x else -1
         for d in (first, -first):
-            if sweep_hit_topsafe(get_backflip_arc(stats, d, boosted=True), gx - c0.x,
-                                 gy - c0.y, tuning.GRAB_REACH, c0.y) is not None:
+            if (
+                sweep_hit_topsafe(
+                    get_backflip_arc(stats, d, boosted=True),
+                    gx - c0.x,
+                    gy - c0.y,
+                    tuning.GRAB_REACH,
+                    c0.y,
+                )
+                is not None
+            ):
                 return d
         return None
 

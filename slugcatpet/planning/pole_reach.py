@@ -1,4 +1,5 @@
 """竖杆够取族（爬杆到指定高度为共用前置）：杆上任意高度 beam jump 斜跳 / 杆顶站立跳直上 / 任意高度松杆落体漂移 / 杆上舌取（Saint）。"""
+
 from __future__ import annotations
 import math
 
@@ -8,14 +9,15 @@ from .ability import Ability, Estimate, RUNNING, DONE, GIVEUP, reach_assist
 from .jump_arc import get_arc, get_drop_arc, get_pole_jump_arc, sweep_hit
 from .tongue_reach import FETCH_IDEAL, FETCH_REEL, APPROACH_TIMEOUT, reset_tongue
 
-POLE_TIP_C0_H = 17.0        # 杆顶/站立时 chunk0 距顶高
+POLE_TIP_C0_H = 17.0  # 杆顶/站立时 chunk0 距顶高
 LAUNCH_ARRIVE_EPS = 6.0
 
 
 def _vpoles(pet):
     """本世界可攀竖杆（无 poles 属性的桩 pet 回落空）。"""
-    return [p for p in getattr(pet, "poles", ())
-            if getattr(p, "kind", None) == "vertical"]
+    return [
+        p for p in getattr(pet, "poles", ()) if getattr(p, "kind", None) == "vertical"
+    ]
 
 
 def _c0_range(pet, pole):
@@ -27,8 +29,10 @@ def _climb_cost_to(pet, pole, hy):
     """走到杆下 + 爬到 chunk0 高 hy 的粗线性 (耗时, 体力)。"""
     walk_t = abs(pet.body.chunk1.x - pole.x) / tuning.PLAN_WALK_SPEED
     climb_t = max(0.0, (pet._HL - POLE_TIP_C0_H) - hy) / tuning.PLAN_CLIMB_SPEED
-    return (walk_t + climb_t,
-            walk_t * tuning.PLAN_EN_RATE_LIGHT + climb_t * tuning.PLAN_EN_RATE_VIGOROUS)
+    return (
+        walk_t + climb_t,
+        walk_t * tuning.PLAN_EN_RATE_LIGHT + climb_t * tuning.PLAN_EN_RATE_VIGOROUS,
+    )
 
 
 def _search_height(arc, gx, gy, pole_x, hy_lo, hy_hi, radius, pet, pole):
@@ -36,7 +40,7 @@ def _search_height(arc, gx, gy, pole_x, hy_lo, hy_hi, radius, pet, pole):
     best = None
     best_c = None
     for i, (px, py) in enumerate(arc.points):
-        hy = gy - py                       # 令该采样点竖直正对目标
+        hy = gy - py  # 令该采样点竖直正对目标
         if not (hy_lo <= hy <= hy_hi):
             continue
         if abs((pole_x + px) - gx) > radius:
@@ -55,7 +59,10 @@ class _PoleClimb:
     def _ensure_climber(self):
         if self.climber is None:
             from ..behavior.pole_climb import PoleClimber
-            self.climber = PoleClimber(self.pet, self.pole, getattr(self.pet, "rng", None))
+
+            self.climber = PoleClimber(
+                self.pet, self.pole, getattr(self.pet, "rng", None)
+            )
 
     def _step_to_height(self, release_hy, want_tip):
         pet = self.pet
@@ -69,9 +76,12 @@ class _PoleClimb:
         if want_tip:
             return "ready" if phase == "tip" else ("fail" if done else "running")
         # 中途高度：须已抓上杆（phase climb/tip）且 chunk0 爬到发射高
-        if phase in ("climb", "tip") and pet.body.chunk0.y <= release_hy + LAUNCH_ARRIVE_EPS:
+        if (
+            phase in ("climb", "tip")
+            and pet.body.chunk0.y <= release_hy + LAUNCH_ARRIVE_EPS
+        ):
             return "ready"
-        if phase == "tip":                 # 到顶仍没到（目标比顶高，不该发生）→ 就用顶
+        if phase == "tip":  # 到顶仍没到（目标比顶高，不该发生）→ 就用顶
             return "ready"
         return "fail" if done else "running"
 
@@ -106,25 +116,48 @@ class PoleJumpReach(Ability):
             for md in (0, 1, -1):
                 done = False
                 for hold in tuning.PLAN_JUMP_HOLD_GEARS:
-                    hit = sweep_hit(get_arc(stats, hold, md), gx - pole.x,
-                                    gy - tip_c0y, tuning.GRAB_REACH)
+                    hit = sweep_hit(
+                        get_arc(stats, hold, md),
+                        gx - pole.x,
+                        gy - tip_c0y,
+                        tuning.GRAB_REACH,
+                    )
                     if hit is not None:
-                        consider(pole, "tip", (hold, md), tip_c0y,
-                                 ct + hit + tuning.PLAN_STARTUP_TICKS,
-                                 ce + hit * tuning.PLAN_EN_RATE_VIGOROUS)
+                        consider(
+                            pole,
+                            "tip",
+                            (hold, md),
+                            tip_c0y,
+                            ct + hit + tuning.PLAN_STARTUP_TICKS,
+                            ce + hit * tuning.PLAN_EN_RATE_VIGOROUS,
+                        )
                         done = True
                         break
                 if done:
                     break
             # 任意高度 beam jump（左右）：搜发射高度
             for d in (1, -1):
-                r = _search_height(get_pole_jump_arc(stats, d), gx, gy, pole.x,
-                                   hy_lo, hy_hi, tuning.GRAB_REACH, pet, pole)
+                r = _search_height(
+                    get_pole_jump_arc(stats, d),
+                    gx,
+                    gy,
+                    pole.x,
+                    hy_lo,
+                    hy_hi,
+                    tuning.GRAB_REACH,
+                    pet,
+                    pole,
+                )
                 if r is not None:
                     hy, hit, ct2, ce2 = r
-                    consider(pole, "beam", (d,), hy,
-                             ct2 + hit + tuning.PLAN_STARTUP_TICKS,
-                             ce2 + hit * tuning.PLAN_EN_RATE_VIGOROUS)
+                    consider(
+                        pole,
+                        "beam",
+                        (d,),
+                        hy,
+                        ct2 + hit + tuning.PLAN_STARTUP_TICKS,
+                        ce2 + hit * tuning.PLAN_EN_RATE_VIGOROUS,
+                    )
         return best
 
     def can_touch(self, goal):
@@ -150,15 +183,30 @@ class PoleDropReach(Ability):
         for pole in _vpoles(pet):
             hy_lo, hy_hi = _c0_range(pet, pole)
             for md in (0, 1, -1):
-                r = _search_height(get_drop_arc(stats, md), gx, gy, pole.x,
-                                   hy_lo, hy_hi, tuning.GRAB_REACH, pet, pole)
+                r = _search_height(
+                    get_drop_arc(stats, md),
+                    gx,
+                    gy,
+                    pole.x,
+                    hy_lo,
+                    hy_hi,
+                    tuning.GRAB_REACH,
+                    pet,
+                    pole,
+                )
                 if r is not None:
                     hy, hit, ct, ce = r
                     t = ct + hit + tuning.PLAN_STARTUP_TICKS
                     if best_t is None or t < best_t:
                         best_t = t
-                        best = (pole, "drop", (md,), hy, t,
-                                ce + hit * tuning.PLAN_EN_RATE_LIGHT)
+                        best = (
+                            pole,
+                            "drop",
+                            (md,),
+                            hy,
+                            t,
+                            ce + hit * tuning.PLAN_EN_RATE_LIGHT,
+                        )
         return best
 
     def can_touch(self, goal):
@@ -233,8 +281,15 @@ class PoleLaunchController(_PoleClimb):
         stats = self.pet.cat.stats
         for md in (0, 1, -1):
             for hold in tuning.PLAN_JUMP_HOLD_GEARS:
-                if sweep_hit(get_arc(stats, hold, md), gx - c0.x, gy - c0.y,
-                             tuning.GRAB_REACH) is not None:
+                if (
+                    sweep_hit(
+                        get_arc(stats, hold, md),
+                        gx - c0.x,
+                        gy - c0.y,
+                        tuning.GRAB_REACH,
+                    )
+                    is not None
+                ):
                     return hold, md
         return self.params
 
@@ -258,15 +313,23 @@ class PoleTongueReach(Ability):
         best_t = None
         for pole in _vpoles(pet):
             hy_lo, hy_hi = _c0_range(pet, pole)
-            hy = clampf(gy, hy_lo, hy_hi)          # 贴目标高度最省舌
+            hy = clampf(gy, hy_lo, hy_hi)  # 贴目标高度最省舌
             d = math.hypot(gx - pole.x, gy - hy)
             if d <= rng:
                 ct, ce = _climb_cost_to(pet, pole, hy)
                 t = ct + d / tuning.PLAN_TONGUE_SPEED + tuning.PLAN_STARTUP_TICKS
                 if best_t is None or t < best_t:
                     best_t = t
-                    best = (pole, hy, Estimate(t, ce + (d / tuning.PLAN_TONGUE_SPEED)
-                                               * tuning.PLAN_EN_RATE_LIGHT))
+                    best = (
+                        pole,
+                        hy,
+                        Estimate(
+                            t,
+                            ce
+                            + (d / tuning.PLAN_TONGUE_SPEED)
+                            * tuning.PLAN_EN_RATE_LIGHT,
+                        ),
+                    )
         return best
 
     def can_touch(self, goal):
@@ -275,9 +338,9 @@ class PoleTongueReach(Ability):
 
     def make_controller(self, goal):
         plan = self._plan(goal)
-        return PoleTongueController(self.pet, goal,
-                                    plan[0] if plan else None,
-                                    plan[1] if plan else None)
+        return PoleTongueController(
+            self.pet, goal, plan[0] if plan else None, plan[1] if plan else None
+        )
 
 
 class PoleTongueController(_PoleClimb):
@@ -300,13 +363,15 @@ class PoleTongueController(_PoleClimb):
         reach_assist(pet, self.goal, gx, gy)
         if self.phase == "climb":
             tip_c0y = self.pole.top_y - POLE_TIP_C0_H
-            st = self._step_to_height(self.release_hy,
-                                      want_tip=(self.release_hy <= tip_c0y + LAUNCH_ARRIVE_EPS))
+            st = self._step_to_height(
+                self.release_hy,
+                want_tip=(self.release_hy <= tip_c0y + LAUNCH_ARRIVE_EPS),
+            )
             if st == "fail":
                 return GIVEUP
             if st == "ready":
                 self._drop_pole()
-                pet.body.release_to_air(move_dir=0)   # 松杆，靠舌把身/果收拢
+                pet.body.release_to_air(move_dir=0)  # 松杆，靠舌把身/果收拢
                 self.phase = "fire"
             return RUNNING
         tg = pet.tongue

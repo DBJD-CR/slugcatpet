@@ -1,4 +1,5 @@
 """能力三问接口：can_touch / can_stay 回 Estimate，make_controller 回执行控制器。"""
+
 from __future__ import annotations
 import math
 
@@ -10,7 +11,7 @@ from ..behavior import tuning
 RUNNING = "running"
 DONE = "done"
 GIVEUP = "giveup"
-HOLD = "hold"          # 到位持续维持驻留：不重规划/不计超时/不计失败
+HOLD = "hold"  # 到位持续维持驻留：不重规划/不计超时/不计失败
 
 # PlanExecutor 对消费方的返回值（HOLD 之外与控制器状态同名）
 HOLDING = "holding"
@@ -23,6 +24,7 @@ MODE_STAY = "stay"
 @dataclass(frozen=True)
 class Estimate:
     """粗线性代价：预估耗时 tick / 预估体力开销。"""
+
     time_est: float
     energy_est: float
 
@@ -30,6 +32,7 @@ class Estimate:
 @dataclass
 class Candidate:
     """一条已过体力门槛的候选方案。"""
+
     ability_key: str
     time_est: float
     energy_est: float
@@ -41,6 +44,7 @@ class Candidate:
 
 class Ability:
     """能力基类；控制器协议：update() -> running|done|giveup，cancel() 清理。"""
+
     key = ""
 
     def __init__(self, pet):
@@ -58,6 +62,7 @@ class Ability:
 
 class PointTarget:
     """reach_for 兼容的点目标（.x/.y）。"""
+
     __slots__ = ("x", "y")
 
     def __init__(self, x, y):
@@ -70,8 +75,7 @@ def walk_band(pet):
     body = pet.body
     xmin = getattr(body, "walk_min", None)
     xmax = getattr(body, "walk_max", None)
-    return (0.0 if xmin is None else xmin,
-            pet._WL if xmax is None else xmax)
+    return (0.0 if xmin is None else xmin, pet._WL if xmax is None else xmax)
 
 
 def reach_assist(pet, goal, gx, gy):

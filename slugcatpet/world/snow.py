@@ -1,4 +1,5 @@
 """雪花粒子 + 边缘霜冻 vignette，强度随 cycle_prog。"""
+
 from __future__ import annotations
 import math
 import random
@@ -34,9 +35,9 @@ class Snowfall:
         self.max_flakes = int(max_flakes)
         self.vignette_max = int(vignette_max)
         self._rng = random.Random(0x5170 ^ (int(seed) * 2654435761 & 0xFFFFFFFF))
-        self._flakes = []          # 长度随强度伸缩
+        self._flakes = []  # 长度随强度伸缩
         self.intensity = 0.0
-        self._vignette_pm = None   # 满强度预渲染缓存，尺寸变自动重建
+        self._vignette_pm = None  # 满强度预渲染缓存，尺寸变自动重建
         self._vignette_key = None
 
     @property
@@ -48,7 +49,9 @@ class Snowfall:
         rng = self._rng
         f = _Flake()
         f.r = rng.uniform(FLAKE_R_MIN, FLAKE_R_MAX)
-        depth = (f.r - FLAKE_R_MIN) / (FLAKE_R_MAX - FLAKE_R_MIN)  # 0=远小 1=近大，越近越快越亮
+        depth = (f.r - FLAKE_R_MIN) / (
+            FLAKE_R_MAX - FLAKE_R_MIN
+        )  # 0=远小 1=近大，越近越快越亮
         f.vy = lerp(1.1, 2.8, depth)
         f.drift = rng.uniform(-0.4, 0.4)
         f.phase = rng.uniform(0.0, 2.0 * math.pi)

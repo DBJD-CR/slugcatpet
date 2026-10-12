@@ -1,4 +1,5 @@
 """单实例锁：文件锁 + 本地 socket；后启实例通知主实例后自退，崩溃陈旧锁自动回收。"""
+
 from __future__ import annotations
 from PySide6.QtCore import QObject, QLockFile
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
@@ -7,7 +8,7 @@ from .._paths import user_dir
 
 _LOCK_NAME = "slugcatpet.lock"
 _SERVER_KEY = "slugcatpet-single-instance"
-_STALE_MS = 30_000          # 陈旧锁回收阈值
+_STALE_MS = 30_000  # 陈旧锁回收阈值
 
 
 class SingleInstance(QObject):
@@ -20,24 +21,24 @@ class SingleInstance(QObject):
         self._lock = QLockFile(self._lock_path)
         self._lock.setStaleLockTime(_STALE_MS)
         self._server: QLocalServer | None = None
-        self.on_secondary_attempt = None    # 主实例回调
+        self.on_secondary_attempt = None  # 主实例回调
 
     def acquire(self) -> bool:
         """尝试成为主实例，返回是否成功。"""
         if not self._try_lock():
             return False
         self._server = QLocalServer(self)
-        QLocalServer.removeServer(self._key)          # 清崩溃残留 server
+        QLocalServer.removeServer(self._key)  # 清崩溃残留 server
         if self._server.listen(self._key):
             self._server.newConnection.connect(self._on_new_connection)
         else:
-            self._server = None                       # 监听失败仍算主
+            self._server = None  # 监听失败仍算主
         return True
 
     def _try_lock(self) -> bool:
         ok = self._lock.tryLock(100)
         if not ok and self._lock.error() == QLockFile.LockError.LockFailedError:
-            if self._lock.removeStaleLockFile():      # 回收陈旧锁重试
+            if self._lock.removeStaleLockFile():  # 回收陈旧锁重试
                 ok = self._lock.tryLock(100)
         return ok
 

@@ -1,4 +1,5 @@
 """圣徒吊顶通达（caps.tongue+ascension）：吊顶横移到目标 x 上方→松舌落体+漂移，覆盖屏内下方任意点。代价最贵，天然当兜底。"""
+
 from __future__ import annotations
 
 from ..behavior import tuning
@@ -49,8 +50,9 @@ class CeilingDropReach(Ability):
         traverse_t = abs(gx - side_x) / tuning.PLAN_WALK_SPEED
         drop_t = _drop_ticks(get_drop_arc(stats, 0), gy - CEIL_RELEASE_Y)
         t = climb_t + traverse_t + drop_t + 2.0 * tuning.PLAN_STARTUP_TICKS
-        e = ((climb_t + traverse_t) * tuning.PLAN_EN_RATE_VIGOROUS
-             + drop_t * tuning.PLAN_EN_RATE_LIGHT)
+        e = (
+            climb_t + traverse_t
+        ) * tuning.PLAN_EN_RATE_VIGOROUS + drop_t * tuning.PLAN_EN_RATE_LIGHT
         return Estimate(t, e)
 
     def make_controller(self, goal):
@@ -88,10 +90,12 @@ class CeilingDropController:
         if self.phase == "hang":
             if self.climber is None:
                 from ..cats.saint.climb import TongueClimber
+
                 self.climber = TongueClimber(pet, self._side, target=(gx, 0.0))
-            self.climber.target = (gx, 0.0)           # 每 tick 喂实时目标，跟随移动的 goal
-            if self.climber.update():                 # True=已吊顶且锚点对准
+            self.climber.target = (gx, 0.0)  # 每 tick 喂实时目标，跟随移动的 goal
+            if self.climber.update():  # True=已吊顶且锚点对准
                 from .tongue_reach import reset_tongue
+
                 reset_tongue(pet)
                 body.release_to_air(move_dir=0)
                 self.phase = "air"
@@ -111,6 +115,7 @@ class CeilingDropController:
     def cancel(self):
         if self.climber is not None:
             from .tongue_reach import reset_tongue
+
             reset_tongue(self.pet)
             self.climber = None
         self.pet.body.stop_walk()

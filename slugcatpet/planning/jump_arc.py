@@ -1,4 +1,5 @@
 """弧线模板：按（stats×档×横向输入）离线空跑真实物理采样 chunk0 相对轨迹并缓存；含起跳弧与落体弧、扫掠命中查询。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,7 +7,7 @@ from dataclasses import dataclass
 from ..behavior import tuning
 from ..core.creature import SlugcatBody
 
-_SIM_W = 4000.0                 # 宽 sim 世界：横向漂移不撞墙
+_SIM_W = 4000.0  # 宽 sim 世界：横向漂移不撞墙
 _SIM_H = 1000.0
 _SETTLE_TICKS = 120
 _MAX_ARC_TICKS = 400
@@ -15,7 +16,7 @@ _MAX_ARC_TICKS = 400
 _DROP_H = 1600.0
 _DROP_START_Y = 40.0
 _MAX_DROP_TICKS = 400
-_PJUMP_START_Y = 500.0          # 竖杆跳 sim 起跳高：留足头顶空间容上冲，不撞 sim 顶
+_PJUMP_START_Y = 500.0  # 竖杆跳 sim 起跳高：留足头顶空间容上冲，不撞 sim 顶
 
 _cache: dict[tuple, object] = {}
 
@@ -23,6 +24,7 @@ _cache: dict[tuple, object] = {}
 @dataclass(frozen=True)
 class JumpArc:
     """一条（stats×档×横向）起跳弧：points=逐 tick chunk0 相对起跳点位移（y↓），takeoff_h=起跳时 chunk0 距地高。"""
+
     hold_ticks: int
     move_dir: int
     takeoff_h: float
@@ -32,6 +34,7 @@ class JumpArc:
 @dataclass(frozen=True)
 class DropArc:
     """一条（stats×横向）落体弧：points=逐 tick chunk0 相对松手点位移（y↓，持续下落）。"""
+
     move_dir: int
     points: tuple[tuple[float, float], ...]
 
@@ -39,6 +42,7 @@ class DropArc:
 @dataclass(frozen=True)
 class PoleJumpArc:
     """一条（stats×方向）竖杆跳弧：points=逐 tick chunk0 相对松杆点位移（y↓）。beam jump 无 boost，弧定形。"""
+
     direction: int
     points: tuple[tuple[float, float], ...]
 
@@ -46,6 +50,7 @@ class PoleJumpArc:
 @dataclass(frozen=True)
 class BackflipArc:
     """一条（stats×方向×boosted）站立后空翻弧：points=相对起跳点位移。"""
+
     direction: int
     points: tuple[tuple[float, float], ...]
 
@@ -58,12 +63,19 @@ class BackflipArc:
 @dataclass(frozen=True)
 class PyroArc:
     """一条（stats×变体）工匠爆跳弧：普通站立跳腾空第 PYRO_BOOST_AIR_TICKS tick 施 pyro_boost；points 同上。"""
+
     variant: str
     points: tuple[tuple[float, float], ...]
 
 
 # 爆跳变体 → 输入方向 (ix,iy)，iy=+1 表上：vert 直跳、side± 横向火箭、diag± 上斜
-PYRO_INPUTS = {"vert": (0, 0), "side+": (1, 0), "side-": (-1, 0), "diag+": (1, 1), "diag-": (-1, 1)}
+PYRO_INPUTS = {
+    "vert": (0, 0),
+    "side+": (1, 0),
+    "side-": (-1, 0),
+    "diag+": (1, 1),
+    "diag-": (-1, 1),
+}
 
 
 def get_arc(stats, hold_ticks: int, move_dir: int = 0) -> JumpArc:

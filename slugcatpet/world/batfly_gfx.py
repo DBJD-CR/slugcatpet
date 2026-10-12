@@ -1,4 +1,5 @@
 """蝙蝠渲染状态推进（不画），y↓。"""
+
 from __future__ import annotations
 import math
 
@@ -7,7 +8,7 @@ from ..core.gfxmath import _ang_from_up, _rot
 from .enums import ItemState
 
 LOWER_CONN = 10.0
-LOWER_DROOP = 0.9 * 2.0       # y↓ 取正
+LOWER_DROOP = 0.9 * 2.0  # y↓ 取正
 
 
 def update_render(bat, sub: float) -> None:
@@ -21,7 +22,7 @@ def update_render(bat, sub: float) -> None:
     else:
         bat.lower_vy += LOWER_DROOP
     if bat.lower_x == bat.x:
-        bat.lower_vx += bat._rng.uniform(-0.1, 0.1)       # 重合时抖开
+        bat.lower_vx += bat._rng.uniform(-0.1, 0.1)  # 重合时抖开
     dx = bat.x - bat.lower_x
     dy = bat.y - bat.lower_y
     dist = math.hypot(dx, dy)

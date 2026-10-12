@@ -1,4 +1,5 @@
 """运行时状态字符串常量。"""
+
 from __future__ import annotations
 
 
@@ -16,4 +17,3 @@ class TongueMode:
     SHOOTING = "shooting"
     ATTACHED = "attached"
     RETRACTING = "retracting"
-

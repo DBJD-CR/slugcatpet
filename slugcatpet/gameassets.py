@@ -1,4 +1,5 @@
 """从用户本机 Rain World 安装提取图集到 ~/.slugcatpet/assets。"""
+
 from __future__ import annotations
 import re
 import sys
@@ -8,8 +9,7 @@ from ._paths import assets_dir, bundled_assets_dir
 from .i18n import t
 
 # 图集名：base + MSC 各含贴图与 UI
-ATLASES = ("rainWorld", "rainworldmsc",
-           "uiSprites", "uispritesmsc")
+ATLASES = ("rainWorld", "rainworldmsc", "uiSprites", "uispritesmsc")
 _ATLAS_REL = Path("RainWorld_Data") / "resources.assets"
 
 
@@ -18,30 +18,48 @@ class SetupError(RuntimeError):
 
 
 def atlases_present(d: Path) -> bool:
-    return all((d / f).exists() for f in
-               ("rainWorld", "rainWorld.png", "rainworldmsc", "rainworldmsc.png",
-                "uiSprites", "uiSprites.png", "uispritesmsc", "uispritesmsc.png"))
+    return all(
+        (d / f).exists()
+        for f in (
+            "rainWorld",
+            "rainWorld.png",
+            "rainworldmsc",
+            "rainworldmsc.png",
+            "uiSprites",
+            "uiSprites.png",
+            "uispritesmsc",
+            "uispritesmsc.png",
+        )
+    )
 
 
 # 定位 Steam 安装
 
+
 def _drive_roots() -> list[Path]:
     if sys.platform == "win32":
-        return [Path(f"{c}:\\") for c in "CDEFGHIJKLMNOP"
-                if Path(f"{c}:\\").exists()]
+        return [Path(f"{c}:\\") for c in "CDEFGHIJKLMNOP" if Path(f"{c}:\\").exists()]
     # mac / linux Steam 默认库
     home = Path.home()
-    return [home / "Library/Application Support/Steam",
-            home / ".steam/steam", home / ".local/share/Steam"]
+    return [
+        home / "Library/Application Support/Steam",
+        home / ".steam/steam",
+        home / ".local/share/Steam",
+    ]
 
 
 def _steam_root() -> Path | None:
     if sys.platform == "win32":
         try:
             import winreg
+
             for hive, key, val in (
                 (winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam", "SteamPath"),
-                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath"),
+                (
+                    winreg.HKEY_LOCAL_MACHINE,
+                    r"SOFTWARE\WOW6432Node\Valve\Steam",
+                    "InstallPath",
+                ),
             ):
                 try:
                     with winreg.OpenKey(hive, key) as k:
@@ -62,8 +80,12 @@ def _steam_libraries() -> list[Path]:
     if sr:
         roots.append(sr)
     for d in _drive_roots():
-        roots += [d / "Program Files (x86)" / "Steam", d / "Steam",
-                  d / "SteamLibrary", d]
+        roots += [
+            d / "Program Files (x86)" / "Steam",
+            d / "Steam",
+            d / "SteamLibrary",
+            d,
+        ]
     libs: list[Path] = []
     seen: set[Path] = set()
     for r in roots:
@@ -92,6 +114,7 @@ def detect_install() -> Path | None:
 
 
 # 提取
+
 
 def extract_atlases(install: Path, dest: Path | None = None) -> Path:
     """从游戏 resources.assets 提取 4 个图集文件到 dest（默认 ~/.slugcatpet/assets）。"""
@@ -152,7 +175,9 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     install = Path(argv[0]) if argv else detect_install()
     if install is None:
-        print("未找到 Rain World 安装。用法：python -m slugcatpet.gameassets <游戏根目录>")
+        print(
+            "未找到 Rain World 安装。用法：python -m slugcatpet.gameassets <游戏根目录>"
+        )
         return 2
     try:
         dest = extract_atlases(install)

@@ -1,4 +1,5 @@
 """横杆借力控制器：swing→reel→grip→pullup→stand 状态机；update() 返回 True=结束。"""
+
 from __future__ import annotations
 
 import math
@@ -82,7 +83,7 @@ class HPoleController:
     # 前段：舌头吊杆
     def _phase_swing(self):
         tg = self.tongue
-        if tg is None or not tg.attached:         # 舌头掉了 → 放弃
+        if tg is None or not tg.attached:  # 舌头掉了 → 放弃
             self.giveup = True
             return True
         tg.anchor = self._anchor  # 固定锚点
@@ -147,7 +148,7 @@ class HPoleController:
         b.animation = "GetUpOnBeam"
         ax, ay = b.pole_x, self.pole.ay
         t = min(1.0, self.timer / float(PULLUP_TICKS))
-        tt = t * t * (3.0 - 2.0 * t)              # smoothstep
+        tt = t * t * (3.0 - 2.0 * t)  # smoothstep
         # 终态：脚钉杆面上，身在其上
         c1.pinned = True
         feet_top_y = ay - STAND_HOVER
@@ -178,8 +179,12 @@ class HPoleController:
         lo, hi = ax_lo + WALK_MARGIN, ax_hi - WALK_MARGIN
         can_walk = hi > lo
         # 低概率：翻到杆下再上来
-        if (can_walk and self._pause <= 0 and self.rng is not None
-                and self.rng.random() < tuning.HP_HANG_PROB):
+        if (
+            can_walk
+            and self._pause <= 0
+            and self.rng is not None
+            and self.rng.random() < tuning.HP_HANG_PROB
+        ):
             self._enter_swing_under()
             return False
         # 走走停停
@@ -188,13 +193,19 @@ class HPoleController:
             walking = False
         else:
             walking = can_walk
-            if (can_walk and self.rng is not None
-                    and self.rng.random() < tuning.HP_PAUSE_PROB):
+            if (
+                can_walk
+                and self.rng is not None
+                and self.rng.random() < tuning.HP_PAUSE_PROB
+            ):
                 self._pause = self.rng.randint(tuning.HP_PAUSE_MIN, tuning.HP_PAUSE_MAX)
                 walking = False
         if walking:
-            if (self._stand_t % TURN_PERIOD == 0 and self.rng is not None
-                    and self.rng.random() < TURN_PROB):
+            if (
+                self._stand_t % TURN_PERIOD == 0
+                and self.rng is not None
+                and self.rng.random() < TURN_PROB
+            ):
                 self._walk_dir = -self._walk_dir
             nx = c1.x + WALK_SPEED * self._walk_dir
             if nx <= lo:
@@ -209,7 +220,9 @@ class HPoleController:
         # 走时晃身平衡
         if walking:
             if self._stand_t % tuning.HP_RETARGET_TICKS == 0 and self.rng is not None:
-                self._wobble_target = self.rng.uniform(tuning.HP_WOBBLE_MIN, tuning.HP_WOBBLE_MAX)
+                self._wobble_target = self.rng.uniform(
+                    tuning.HP_WOBBLE_MIN, tuning.HP_WOBBLE_MAX
+                )
             target = self._wobble_target
         else:
             target = 0.0

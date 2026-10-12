@@ -1,8 +1,9 @@
 """飞升超度 Ascension：冲击波→悬浮回正→追锁蓄能→闪→劫持光标。"""
+
 from __future__ import annotations
 import math
 
-from ...core.units import K_VEL, K_IMP, clampf
+from ...core.units import K_VEL, clampf
 
 T_ASCEND_TIMEOUT = 1200
 
@@ -27,7 +28,7 @@ KILLFAC_RATE = 0.025
 FLASH_RADIUS = 60.0
 SPARK_COUNT = 20
 SPARK_SPEED_MAX = 40.0 * K_VEL
-SPARK_LIFE_MIN, SPARK_LIFE_MAX = 30, 120   # 40Hz
+SPARK_LIFE_MIN, SPARK_LIFE_MAX = 30, 120  # 40Hz
 
 # 视觉常量
 NUM_GOD_PIPS = 12
@@ -43,7 +44,7 @@ class Ascension:
         self.body.hover = True
         self.body.suspended = False
         self.timer = 0
-        self.launch = LAUNCH_TICKS if grounded else 0   # 地面先窜起，空中跳过
+        self.launch = LAUNCH_TICKS if grounded else 0  # 地面先窜起，空中跳过
         self.upright = 15
 
         self.homing_range = max(HOMING_RANGE, math.hypot(win._WL, win._HL))
@@ -66,11 +67,12 @@ class Ascension:
         # 淡入 / 半径缓动
         self.rubber_alpha_emblem = 0.0
         self.rubber_alpha_pips = 0.0
-        self.rubber_radius = 6.0         # 缓动到 15
+        self.rubber_radius = 6.0  # 缓动到 15
 
         # 4 条触手，X 形 45/135/225/315°
         from .tentacles import GhostTentacle
-        self.darken = 0.0        # 变暗因子 0..1
+
+        self.darken = 0.0  # 变暗因子 0..1
         self.tentacles_visible = 0
         rx, ry = self._body_root()
         self.tentacles = [GhostTentacle(rx, ry, length=100.0, seed=i) for i in range(4)]
@@ -88,7 +90,9 @@ class Ascension:
         for i in range(10):
             ang = (i / 10.0) * 2 * math.pi
             sp = 2.67 + (14.0 - 2.67) * ((i * 7 % 10) / 10.0)
-            win.add_spark(c1.x, c1.y, math.cos(ang) * sp, math.sin(ang) * sp, white=True)
+            win.add_spark(
+                c1.x, c1.y, math.cos(ang) * sp, math.sin(ang) * sp, white=True
+            )
 
     def _body_root(self):
         """触手根锚 = chunk0（上半身）。"""
@@ -136,7 +140,9 @@ class Ascension:
             self.tentacles_visible += 1
         if self.tentacles_visible > target_vis:
             self.tentacles_visible = target_vis
-        target_darken = 0.0 if self.flashed else (0.85 if self.tentacles_visible > 0 else 0.0)
+        target_darken = (
+            0.0 if self.flashed else (0.85 if self.tentacles_visible > 0 else 0.0)
+        )
         if self.tentacles_visible > 0 and self.darken == 0.0:
             self.darken = 0.01
         self.darken += (target_darken - self.darken) * 0.04
@@ -145,6 +151,7 @@ class Ascension:
         if self.darken <= 0.0:
             return
         from .tentacles import deg_to_vec_qt
+
         rx, ry = self._body_root()
         for i, t in enumerate(self.tentacles):
             t.update()
@@ -199,7 +206,7 @@ class Ascension:
             self.killWait = 0.0
             self.killFac = 0.0
         bx, by = self.body.chunk0.x, self.body.chunk0.y
-        burst_x = self.fx - bx                # burst 横向裸偏移
+        burst_x = self.fx - bx  # burst 横向裸偏移
         burst_y = (self.fy + 60.0) - by
         follow = 0.3 if self.lockon else 0.15
         self.rubber_mouse_x += (burst_x - self.rubber_mouse_x) * follow
@@ -226,8 +233,14 @@ class Ascension:
         for i in range(SPARK_COUNT):
             ang = (i / SPARK_COUNT) * 2 * math.pi + (i * 0.37)
             sp = ((i * 13 % 20) / 20.0) * SPARK_SPEED_MAX
-            win.add_spark(self.fx, self.fy, math.cos(ang) * sp, math.sin(ang) * sp,
-                          white=True, life=SPARK_LIFE_MIN + (i * 9 % (SPARK_LIFE_MAX - SPARK_LIFE_MIN)))
+            win.add_spark(
+                self.fx,
+                self.fy,
+                math.cos(ang) * sp,
+                math.sin(ang) * sp,
+                white=True,
+                life=SPARK_LIFE_MIN + (i * 9 % (SPARK_LIFE_MAX - SPARK_LIFE_MIN)),
+            )
         win.start_cursor_hijack(self.fx, self.fy)
 
     def _exit(self, hijack):
@@ -249,6 +262,7 @@ class Ascension:
         """4 条幽灵触手，加色混合。"""
         from ...rendering.primitives import ribbon
         from PySide6.QtGui import QPainter
+
         p.save()
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
@@ -263,8 +277,9 @@ class Ascension:
         """臀部扭曲光斑。"""
         from PySide6.QtGui import QColor, QRadialGradient, QBrush, QPainter
         from PySide6.QtCore import QPointF, Qt
+
         hx, hy = self._hip_pos()
-        radius = 15.0 * self.darken * 8.0            # 16px 贴图，半径≈scale*8
+        radius = 15.0 * self.darken * 8.0  # 16px 贴图，半径≈scale*8
         if radius < 1.0:
             return
         a = int(70 * self.darken)
@@ -283,8 +298,9 @@ class Ascension:
         if self.flashed:
             return
         from PySide6.QtGui import QPainter
+
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        flat_x, flat_y = self.fx, self.fy   # 光斑位 = body + burst
+        flat_x, flat_y = self.fx, self.fy  # 光斑位 = body + burst
         # 眼位 = rubber_mark + rubber_mouse，-60 向上偏移
         eye_x = self.rubber_mark_x + self.rubber_mouse_x
         eye_y = self.rubber_mark_y - 60.0 + self.rubber_mouse_y
@@ -299,9 +315,10 @@ class Ascension:
             return
         from PySide6.QtGui import QColor, QRadialGradient, QBrush, QPainter
         from PySide6.QtCore import QPointF, Qt
+
         scale = 50.0 + (2.0 - 50.0) * math.sqrt(f)
-        radius = scale * 8.0                           # 16px 贴图，半径≈scale*8
-        alpha = f ** 3.0
+        radius = scale * 8.0  # 16px 贴图，半径≈scale*8
+        alpha = f**3.0
         grad = QRadialGradient(QPointF(cx, cy), radius)
         grad.setColorAt(0.0, QColor(255, 255, 255, int(alpha * 255)))
         grad.setColorAt(1.0, QColor(255, 255, 255, 0))
@@ -317,6 +334,7 @@ class Ascension:
         """guardEye 图标，固定暖金色，勿改回。"""
         from PySide6.QtGui import QColor
         from PySide6.QtCore import QPointF
+
         a = max(0, min(255, int(alpha * 255)))
         if a <= 0:
             return
@@ -336,6 +354,7 @@ class Ascension:
         """12 个 WormEye god pips，固定暖金色，勿改回。"""
         from PySide6.QtGui import QColor
         from PySide6.QtCore import QPointF
+
         a = max(0, min(255, int(alpha * 255)))
         if a <= 0:
             return
@@ -358,7 +377,7 @@ class Ascension:
             ang = math.radians(-(i * (360.0 / NUM_GOD_PIPS)))
             cos_a = math.cos(ang)
             sin_a = math.sin(ang)
-            ox = radius * cos_a - radius * sin_a   # 旋转的向量为 (radius, radius)
+            ox = radius * cos_a - radius * sin_a  # 旋转的向量为 (radius, radius)
             oy = radius * sin_a + radius * cos_a
             p.drawPixmap(QPointF(cx + ox - hw, cy + oy - hh), pm)
         p.restore()

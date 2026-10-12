@@ -1,4 +1,5 @@
 """计划执行器：驱动候选控制器；续跑优先（同方案仍最优则不打断），进展判失败，2+2 放弃进冷却。"""
+
 from __future__ import annotations
 
 from ..behavior import tuning
@@ -13,19 +14,19 @@ class PlanExecutor:
         self.planner = planner
         self.goal = goal
         self.mode = mode
-        self._fails = {}           # ability_key -> 失败次数
-        self._exhausted = set()    # 已 2 败踢出的方案
+        self._fails = {}  # ability_key -> 失败次数
+        self._exhausted = set()  # 已 2 败踢出的方案
         self._schemes_burned = 0
         self._active = None
         self._controller = None
         self._step_ticks = 0
         self._step_budget = 0.0
-        self._start_best = 0.0     # step 开始时的最优剩余耗时
-        self._replans = 0          # 世界性重规划累计
+        self._start_best = 0.0  # step 开始时的最优剩余耗时
+        self._replans = 0  # 世界性重规划累计
         self._snap_wv = None
         self._snap_zerog = None
         self._given_up = False
-        self._holding = False      # 上一 tick 报 HOLD，本 tick 免破裂检查
+        self._holding = False  # 上一 tick 报 HOLD，本 tick 免破裂检查
 
     def update(self):
         if self._given_up:
@@ -36,8 +37,11 @@ class PlanExecutor:
             self._given_up = True
             return GIVEUP
         # 路径几何变化才重规划，驻留中免检
-        if (self._controller is not None and not self._holding
-                and self._structural_changed()):
+        if (
+            self._controller is not None
+            and not self._holding
+            and self._structural_changed()
+        ):
             self._replans += 1
             if self._replans > tuning.PLAN_REPLAN_BUDGET:
                 return self._give_up()
@@ -50,7 +54,7 @@ class PlanExecutor:
         # stay 语境：DONE 与 HOLD 同等对待为已到位
         if status == DONE and self.mode == MODE_STAY:
             status = HOLD
-        self._holding = (status == HOLD)
+        self._holding = status == HOLD
         if status == HOLD:
             # 驻留中快照保鲜，防世界变更误判破裂
             self._step_ticks = 0
@@ -74,8 +78,10 @@ class PlanExecutor:
         self._abort_controller()
         remaining = self._filtered()
         new_best = remaining[0].time_est if remaining else None
-        progressed = (new_best is not None
-                      and self._start_best - new_best >= tuning.PLAN_PROGRESS_MIN)
+        progressed = (
+            new_best is not None
+            and self._start_best - new_best >= tuning.PLAN_PROGRESS_MIN
+        )
         if not progressed and not self._count_fail():
             return GIVEUP
         if not self._plan():
@@ -110,8 +116,7 @@ class PlanExecutor:
         return self.planner.touch_candidates(self.goal)
 
     def _filtered(self):
-        return [c for c in self._candidates()
-                if c.ability_key not in self._exhausted]
+        return [c for c in self._candidates() if c.ability_key not in self._exhausted]
 
     def _plan(self):
         cands = self._filtered()
@@ -120,8 +125,10 @@ class PlanExecutor:
         self._active = cands[0]
         self._controller = self._active.make_controller()
         self._step_ticks = 0
-        self._step_budget = max(tuning.PLAN_STEP_TIMEOUT_MIN,
-                                self._active.time_est * tuning.PLAN_STEP_TIMEOUT_K)
+        self._step_budget = max(
+            tuning.PLAN_STEP_TIMEOUT_MIN,
+            self._active.time_est * tuning.PLAN_STEP_TIMEOUT_K,
+        )
         self._start_best = self._active.time_est
         self._resnapshot()
         return True

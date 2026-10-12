@@ -1,4 +1,5 @@
 """控制 HUD：受控猫键盘输入窗，失焦暂停。"""
+
 from __future__ import annotations
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QLayout
 from PySide6.QtCore import Qt, QTimer
@@ -18,7 +19,8 @@ _PANEL_QSS = (
     "#ctrlKeys{color:#cfe8b8;font-size:11px;}"
     "QPushButton{background:transparent;color:#9fc080;border:1px solid #4a5a3a;"
     "border-radius:8px;font-size:12px;padding:5px 12px;}"
-    "QPushButton:hover{background:rgba(120,150,100,40);}")
+    "QPushButton:hover{background:rgba(120,150,100,40);}"
+)
 
 _PAUSED_QSS = "color:#e8c86a;font-weight:bold;"
 
@@ -30,16 +32,20 @@ class ControlHud(QWidget):
         super().__init__()
         self._window = window
         self.pet = pet
-        self._held = set()      # 当前按住的按键
+        self._held = set()  # 当前按住的按键
         self._paused = False
         self._drag = None
         self._keymap = load_keymap()
 
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint
-                            | Qt.WindowType.WindowStaysOnTopHint
-                            | Qt.WindowType.Tool)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)   # 勿设 WA_ShowWithoutActivating，键盘唯一入口
+        self.setFocusPolicy(
+            Qt.FocusPolicy.StrongFocus
+        )  # 勿设 WA_ShowWithoutActivating，键盘唯一入口
 
         self._build()
         self._place()
@@ -59,20 +65,27 @@ class ControlHud(QWidget):
         box.setContentsMargins(14, 10, 14, 10)
         box.setSpacing(6)
 
-        title = QLabel(t("ctrlhud_title", name=pet_label(self.pet, list(self._window.pets))))
+        title = QLabel(
+            t("ctrlhud_title", name=pet_label(self.pet, list(self._window.pets)))
+        )
         title.setObjectName("ctrlTitle")
         box.addWidget(title)
 
-        k = {a: key_display_name(a).upper() for a in ("left", "right", "up", "down", "jump")}
-        self._keys_text = t("ctrlhud_keys",
-                            move=k["up"] + k["left"] + k["down"] + k["right"],
-                            jump=k["jump"])
+        k = {
+            a: key_display_name(a).upper()
+            for a in ("left", "right", "up", "down", "jump")
+        }
+        self._keys_text = t(
+            "ctrlhud_keys",
+            move=k["up"] + k["left"] + k["down"] + k["right"],
+            jump=k["jump"],
+        )
         self._keys = QLabel(self._keys_text)
         self._keys.setObjectName("ctrlKeys")
         box.addWidget(self._keys)
 
         btn = QPushButton(t("ctrlhud_exit"))
-        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)   # 防空格触发按钮
+        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 防空格触发按钮
         btn.clicked.connect(lambda: self._window.stop_control())
         box.addWidget(btn)
         outer.addWidget(panel)
@@ -98,12 +111,16 @@ class ControlHud(QWidget):
 
         x = (1 if down("right") else 0) - (1 if down("left") else 0)
         y = (1 if down("up") else 0) - (1 if down("down") else 0)
-        return InputPackage(x=x, y=y, jmp=down("jump"),
-                            pckp=down("grab"), thrw=down("throw"))
+        return InputPackage(
+            x=x, y=y, jmp=down("jump"), pckp=down("grab"), thrw=down("throw")
+        )
 
     def _check_session(self):
         # 会话失效则自关
-        if not getattr(self.pet, "controlled", False) or self.pet not in self._window.pets:
+        if (
+            not getattr(self.pet, "controlled", False)
+            or self.pet not in self._window.pets
+        ):
             self._window.stop_control()
 
     def _set_paused(self, paused: bool):
@@ -156,7 +173,9 @@ class ControlHud(QWidget):
             screen = QGuiApplication.primaryScreen().availableGeometry()
             p = ev.globalPosition().toPoint() - self._drag
             x = max(screen.x(), min(screen.x() + screen.width() - self.width(), p.x()))
-            y = max(screen.y(), min(screen.y() + screen.height() - self.height(), p.y()))
+            y = max(
+                screen.y(), min(screen.y() + screen.height() - self.height(), p.y())
+            )
             self.move(x, y)
             ev.accept()
 

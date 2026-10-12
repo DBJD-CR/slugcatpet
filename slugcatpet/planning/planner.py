@@ -1,4 +1,5 @@
 """重力域规划内核：能力按每猫能力清单（CatCaps）门禁，枚举→体力门槛过滤→耗时升序。"""
+
 from __future__ import annotations
 import time
 
@@ -21,18 +22,26 @@ class Planner:
     def __init__(self, pet, clock=time.monotonic):
         self.pet = pet
         self._cooldown = CooldownRegistry(clock)
-        self._ability_cache = None    # 能力实例无状态，懒建后复用
+        self._ability_cache = None  # 能力实例无状态，懒建后复用
 
     def _abilities(self):
         # 能力集按 caps 装配
         if self._ability_cache is not None:
             return self._ability_cache
         caps = self.pet.cat.caps
-        out = [WalkReach(self.pet), JumpReach(self.pet),
-               PoleJumpReach(self.pet), PoleDropReach(self.pet)]
+        out = [
+            WalkReach(self.pet),
+            JumpReach(self.pet),
+            PoleJumpReach(self.pet),
+            PoleDropReach(self.pet),
+        ]
         if caps.tongue:
-            out += [TongueReach(self.pet), ClimbReach(self.pet),
-                    PoleTongueReach(self.pet), TongueHangStay(self.pet)]
+            out += [
+                TongueReach(self.pet),
+                ClimbReach(self.pet),
+                PoleTongueReach(self.pet),
+                TongueHangStay(self.pet),
+            ]
             if caps.ascension:
                 out.append(CeilingDropReach(self.pet))
         if caps.pyro:
@@ -49,8 +58,14 @@ class Planner:
             est = getattr(ab, question)(goal)
             if est is None or est.energy_est > energy:
                 continue
-            out.append(Candidate(ab.key, est.time_est, est.energy_est,
-                                 lambda ab=ab, g=goal: ab.make_controller(g)))
+            out.append(
+                Candidate(
+                    ab.key,
+                    est.time_est,
+                    est.energy_est,
+                    lambda ab=ab, g=goal: ab.make_controller(g),
+                )
+            )
         out.sort(key=lambda c: c.time_est)
         return out
 

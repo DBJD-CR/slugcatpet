@@ -1,4 +1,5 @@
 """Rivulet 独占状态：caps.acrobat → RivFlip 后空翻上横杆 + mood 候选。"""
+
 from __future__ import annotations
 
 import math
@@ -9,11 +10,11 @@ from ...planning.backflip_reach import SETTLE_MAX, SETTLE_VX, TOP_CLEAR, takeoff
 from ...planning.jump_arc import get_backflip_arc
 from ...world.hpole import GRIP_DIST
 
-ARRIVE_X = 8.0           # px
-LAUNCH_TIMEOUT = 80      # 起跳未腾空兜底 tick
-FLIP_TIMEOUT = 1200      # tick
-POLE_X_MARGIN = 10.0     # 离杆端余量 px
-AIM_BAND = GRIP_DIST - 4.0   # 贴杆瞄准带，留 sim 残差余量
+ARRIVE_X = 8.0  # px
+LAUNCH_TIMEOUT = 80  # 起跳未腾空兜底 tick
+FLIP_TIMEOUT = 1200  # tick
+POLE_X_MARGIN = 10.0  # 离杆端余量 px
+AIM_BAND = GRIP_DIST - 4.0  # 贴杆瞄准带，留 sim 残差余量
 
 
 def mount(fsm):
@@ -21,13 +22,16 @@ def mount(fsm):
     if fsm.win.cat.caps.acrobat:
         _mount_rivflip(fsm)
         from .snatch import mount_snatch
+
         mount_snatch(fsm)
 
 
 def _walk_band(fsm):
     b = fsm.body
-    return (0.0 if b.walk_min is None else b.walk_min,
-            fsm.WL if b.walk_max is None else b.walk_max)
+    return (
+        0.0 if b.walk_min is None else b.walk_min,
+        fsm.WL if b.walk_max is None else b.walk_max,
+    )
 
 
 def _pole_reachable(fsm):
@@ -62,12 +66,14 @@ def _pole_plan(fsm):
             continue
         # 锚点：贴近当前 x 优先，其次杆中点
         for ax_t in (max(lo, min(hi, b.chunk1.x)), (lo + hi) * 0.5):
-            for d in ((1, -1) if ax_t >= b.chunk1.x else (-1, 1)):
+            for d in (1, -1) if ax_t >= b.chunk1.x else (-1, 1):
                 arc = get_backflip_arc(stats, d)
                 if arc.apex + GRIP_DIST < rise:
                     continue
                 for px, py in arc.points:
-                    if launch_y + py < TOP_CLEAR:   # 越窗顶余量：其后命中被 clamp 失真，弃该弧
+                    if (
+                        launch_y + py < TOP_CLEAR
+                    ):  # 越窗顶余量：其后命中被 clamp 失真，弃该弧
                         break
                     if abs(launch_y + py - pole.ay) <= AIM_BAND:
                         lx = ax_t - px
@@ -92,7 +98,7 @@ def _mount_rivflip(fsm):
         fsm.body.set_posture(True)
         fsm._clear_hands()
         plan = _pole_plan(fsm)
-        if plan is None:                 # 预检过但选点无解→收工
+        if plan is None:  # 预检过但选点无解→收工
             fsm._rf_dirty = False
             fsm._rf_pole = None
             fsm._transition("IdleStand")
@@ -115,15 +121,18 @@ def _mount_rivflip(fsm):
             finish(b)
             return
         pole = fsm._rf_pole
-        if pole is not None and pole not in fsm.win.poles:   # 杆没了：空中顺势落地，未起跳直接收工
+        if (
+            pole is not None and pole not in fsm.win.poles
+        ):  # 杆没了：空中顺势落地，未起跳直接收工
             pole = fsm._rf_pole = None
         ph = fsm._rf_phase
         if pole is None and ph != "air":
             finish(b)
             return
         if ph == "walk":
-            if b.on_floor() and (not b.is_moving()
-                                 or abs(b.chunk1.x - fsm._rf_x) < ARRIVE_X):
+            if b.on_floor() and (
+                not b.is_moving() or abs(b.chunk1.x - fsm._rf_x) < ARRIVE_X
+            ):
                 b.stop_walk()
                 fsm._rf_phase = "settle"
             return
@@ -142,7 +151,7 @@ def _mount_rivflip(fsm):
             b.move_dir = fsm._rf_d
             if pole is not None and _near_pole(b, pole):
                 b.stop_walk()
-                fsm._rf_dirty = False        # animation 交 HPole 生命周期接管
+                fsm._rf_dirty = False  # animation 交 HPole 生命周期接管
                 fsm._hpole_pole = pole
                 fsm._transition("HPole")
             return
@@ -176,21 +185,39 @@ def _mount_rivflip(fsm):
             clear_motion()
 
     fsm.register_ticker(leak_watch)
-    fsm.register_state("RivFlip", enter=enter, tick=st_rivflip,
-                       brk=brk, kill_break=brk, mood="riv_flip")
+    fsm.register_state(
+        "RivFlip",
+        enter=enter,
+        tick=st_rivflip,
+        brk=brk,
+        kill_break=brk,
+        mood="riv_flip",
+    )
 
     mult = play_mult(fsm.pers, "riv_flip")
     energy_gate = play_gate(fsm.pers)
 
     def gate(ctx):
         # 泳/零重力退避；体力过门；有可达横杆
-        return (not ctx.submerged and not getattr(fsm.body, "zerog", False)
-                and ctx.energy >= energy_gate and _pole_reachable(fsm))
+        return (
+            not ctx.submerged
+            and not getattr(fsm.body, "zerog", False)
+            and ctx.energy >= energy_gate
+            and _pole_reachable(fsm)
+        )
 
-    fsm.mood.add(Candidate(
-        "riv_flip", base=tuning.RIVFLIP_BASE * mult,
-        start=tuning.RIVFLIP_START, quit=tuning.RIVFLIP_QUIT,
-        decay=tuning.RIVFLIP_DECAY, recover=tuning.RIVFLIP_RECOVER,
-        gate=gate,
-        energy_factor=lambda e: 1.0, temper_factor=lambda t: 1.0,
-        one_shot=True, init=tuning.RIVFLIP_INIT))
+    fsm.mood.add(
+        Candidate(
+            "riv_flip",
+            base=tuning.RIVFLIP_BASE * mult,
+            start=tuning.RIVFLIP_START,
+            quit=tuning.RIVFLIP_QUIT,
+            decay=tuning.RIVFLIP_DECAY,
+            recover=tuning.RIVFLIP_RECOVER,
+            gate=gate,
+            energy_factor=lambda e: 1.0,
+            temper_factor=lambda t: 1.0,
+            one_shot=True,
+            init=tuning.RIVFLIP_INIT,
+        )
+    )

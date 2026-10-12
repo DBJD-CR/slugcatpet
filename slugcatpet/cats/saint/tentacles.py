@@ -1,4 +1,5 @@
 """幽灵触手 GhostTentacle：飞升时的发光软触手；坐标 y↓。"""
+
 from __future__ import annotations
 import math
 import random
@@ -38,7 +39,7 @@ class GhostTentacle:
         s0[0] = s0[2] = x
         s0[1] = s0[3] = y
 
-    def _connect(self, A, B):                            # 软距离约束
+    def _connect(self, A, B):  # 软距离约束
         a = self.seg[A]
         b = self.seg[B]
         dx = a[0] - b[0]
@@ -50,8 +51,14 @@ class GhostTentacle:
         t = 0.0 if self.conRad <= 0 else max(0.0, min(1.0, d / self.conRad))
         m = (self.conRad - d) * 0.5 * t
         mx, my = nx * m, ny * m
-        a[0] += mx; a[4] += mx; a[1] += my; a[5] += my
-        b[0] -= mx; b[4] -= mx; b[1] -= my; b[5] -= my
+        a[0] += mx
+        a[4] += mx
+        a[1] += my
+        a[5] += my
+        b[0] -= mx
+        b[4] -= mx
+        b[1] -= my
+        b[5] -= my
 
     def update(self):  # 弯曲传播 → 风力积分 → 距离约束两遍
         n = self.n
@@ -76,14 +83,17 @@ class GhostTentacle:
             self.seg[i][5] += vy * 0.15
         pbx, pby = self.posB
         for j in range(n):
-            frac = j / (n - 1) if n > 1 else 0.0          # 根 0 → 尖 1
+            frac = j / (n - 1) if n > 1 else 0.0  # 根 0 → 尖 1
             s = self.seg[j]
-            s[2] = s[0]; s[3] = s[1]
-            s[0] += s[4]; s[1] += s[5]
-            s[4] *= 0.999; s[5] *= 0.999
+            s[2] = s[0]
+            s[3] = s[1]
+            s[0] += s[4]
+            s[1] += s[5]
+            s[4] *= 0.999
+            s[5] *= 0.999
             s[4] += self.wind_x * 0.005
             s[5] += self.wind_y * 0.005
-            if frac > 0.5:                                # 尖半段往根回拉
+            if frac > 0.5:  # 尖半段往根回拉
                 rx, ry = pbx - s[0], pby - s[1]
                 rl = math.hypot(rx, ry)
                 if rl > 40.0:
@@ -96,16 +106,18 @@ class GhostTentacle:
         for m in range(1, n):
             self._connect(m, m - 1)
 
-    def active_update(self):                             # 生长
+    def active_update(self):  # 生长
         self.lengthFactor += (1.0 - self.lengthFactor) * 0.01
         self.activeUpdateTime += 1
         if self.activeUpdateTime == 1:
             s0 = self.seg[0]
             for i in range(1, self.n):
-                self.seg[i][0] = s0[0]; self.seg[i][1] = s0[1]
-                self.seg[i][2] = s0[2]; self.seg[i][3] = s0[3]
+                self.seg[i][0] = s0[0]
+                self.seg[i][1] = s0[1]
+                self.seg[i][2] = s0[2]
+                self.seg[i][3] = s0[3]
 
-    def inactive_update(self):                           # 收缩
+    def inactive_update(self):  # 收缩
         if self.lengthFactor <= 0.01:
             self.lengthFactor = 0.0
         else:
@@ -116,12 +128,12 @@ class GhostTentacle:
         return 0.2 + (1.0 - 0.2) * math.sqrt(max(0.0, min(1.0, math.sin(f * math.pi))))
 
     @staticmethod
-    def _mesh_color(f):                                  # → (r,g,b) 0..255
+    def _mesh_color(f):  # → (r,g,b) 0..255
         f = abs(f - 0.5) * 2.0
-        e = 0.5 + 0.5 * (f ** 3)
+        e = 0.5 + 0.5 * (f**3)
         h = (0.4 + (0.1 - 0.4) * e) % 1.0
         s = (0.4 + (0.1 - 0.4) * e) % 1.0
-        l = 0.1 + (0.02 - 0.1) * max(0.0, min(1.0, (f - 0.7) / 0.3))
+        l = 0.1 + (0.02 - 0.1) * max(0.0, min(1.0, (f - 0.7) / 0.3))  # noqa: E741
         r, g, b = colorsys.hls_to_rgb(h, l, s)
         return (int(r * 255), int(g * 255), int(b * 255))
 

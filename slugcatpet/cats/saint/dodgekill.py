@@ -1,4 +1,5 @@
 """躲避被杀控制器 KillDodger：舌头点掉「杀死」确认弹窗的"取消"按钮。"""
+
 from __future__ import annotations
 import math
 
@@ -25,7 +26,7 @@ class KillDodger:
         self.timer = 0
         self.giveup = False
         self._click_dwell = 0
-        self._climber = None            # TongueClimber 实例
+        self._climber = None  # TongueClimber 实例
         self._climb_side = 0
         self._climb_tries = 0
         self.tongue.reset_config()
@@ -42,7 +43,7 @@ class KillDodger:
     def update(self):
         self.timer += 1
         tgt = self.win.kill_cancel_target()
-        if tgt is None:                       # 弹窗没了
+        if tgt is None:  # 弹窗没了
             return True
         tx, ty = tgt
         b, tg = self.body, self.tongue
@@ -61,17 +62,17 @@ class KillDodger:
 
         if self.phase == "work":
             if within:
-                if tg.is_idle():         # 够到 → 射舌收绳
+                if tg.is_idle():  # 够到 → 射舌收绳
                     tg.set_targets(ideal=FIRE_IDEAL, reel_rate=FIRE_REEL)
                     self.win.fire_tongue_at(tx, ty)
                     self.phase = "clicking"
                     self.timer = 0
                 return False
-            self._enter_climb(tx)             # 够不到 → 爬墙上顶横移
+            self._enter_climb(tx)  # 够不到 → 爬墙上顶横移
             return False
 
         if self.phase == "climb":
-            if within:                        # 进射程 → 退爬升回 work
+            if within:  # 进射程 → 退爬升回 work
                 self._reset_tongue()
                 self._climber = None
                 self.phase = "work"
@@ -83,15 +84,18 @@ class KillDodger:
             wall_x = b.walk_max if self._climb_side > 0 else b.walk_min
             if wall_x is None:
                 wall_x = self.win._WL if self._climb_side > 0 else 0.0
-            if self._climber is None:         # 先走到近侧墙脚，再交 TongueClimber
+            if self._climber is None:  # 先走到近侧墙脚，再交 TongueClimber
                 if b.on_floor() and abs(c0.x - wall_x) > 12.0:
                     b.walk_to(wall_x)
                     return False
                 b.stop_walk()
                 from .climb import TongueClimber
-                self._climber = TongueClimber(self.win, self._climb_side, target=(tx, ty))
+
+                self._climber = TongueClimber(
+                    self.win, self._climb_side, target=(tx, ty)
+                )
                 return False
-            self._climber.target = (tx, ty)   # 喂实时按钮坐标
+            self._climber.target = (tx, ty)  # 喂实时按钮坐标
             self._climber.update()
             if self._climber.giveup:
                 self._reset_tongue()
@@ -100,19 +104,19 @@ class KillDodger:
                 if self._climb_tries >= CLIMB_RETRY_MAX:
                     self.giveup = True
                     return True
-                self.phase = "work"           # 回 work 重判
+                self.phase = "work"  # 回 work 重判
                 self.timer = 0
             return False
 
         if self.phase == "clicking":
-            if tg.attached:                   # 舔到 → 停留后点
+            if tg.attached:  # 舔到 → 停留后点
                 self._click_dwell += 1
                 if self._click_dwell >= CLICK_DWELL:
                     self.win.click_kill_cancel()
                     return True
                 return False
             if tg.is_idle() or self.timer > CLICK_TIMEOUT:
-                self.phase = "work"           # 没附上 → 重试
+                self.phase = "work"  # 没附上 → 重试
                 self.timer = 0
                 self._click_dwell = 0
             return False

@@ -1,4 +1,5 @@
 """舔光标交互：三阶段状态机。"""
+
 from __future__ import annotations
 import math
 
@@ -31,8 +32,8 @@ class CursorLicker:
         self.timer = 0
         self.attach_ticks = 0
         self.ground_ticks = 0
-        self._intent = None       # 'attach' 够到 / 'miss' 舔空
-        self.outcome = None       # 仅供观测，不参与逻辑
+        self._intent = None  # 'attach' 够到 / 'miss' 舔空
+        self.outcome = None  # 仅供观测，不参与逻辑
         self.tongue.reset_config()  # 防残留配置
 
     def update(self, cursor, cursor_speed) -> str:
@@ -50,8 +51,12 @@ class CursorLicker:
         return HL * BAND_LO <= cursor[1] <= HL * BAND_HI
 
     def _phase_walk_under(self, cursor, cursor_speed):
-        if (cursor is None or not self._in_band(cursor)
-                or cursor_speed > SPEED_RELEASE or self.timer > WALK_TIMEOUT):
+        if (
+            cursor is None
+            or not self._in_band(cursor)
+            or cursor_speed > SPEED_RELEASE
+            or self.timer > WALK_TIMEOUT
+        ):
             self.outcome = "walk_abort"
             return "to_idle"
         self.body.walk_to(cursor[0])
@@ -65,11 +70,14 @@ class CursorLicker:
     def _phase_lick_shoot(self, cursor, cursor_speed):
         tg = self.tongue
         if self._intent is None:
-            if (cursor is None or not self._in_band(cursor)
-                    or cursor_speed > SPEED_RELEASE):
+            if (
+                cursor is None
+                or not self._in_band(cursor)
+                or cursor_speed > SPEED_RELEASE
+            ):
                 self.outcome = "walk_abort"
                 return "to_idle"
-            if not tg.is_idle():        # 被占用（不该发生）→ 等
+            if not tg.is_idle():  # 被占用（不该发生）→ 等
                 return "continue"
             mox, moy = self.win.gfx.mouth_world()
             dist = math.hypot(cursor[0] - mox, cursor[1] - moy)
@@ -106,8 +114,13 @@ class CursorLicker:
         dx, dy = cursor[0] - mox, cursor[1] - moy
         d = math.hypot(dx, dy) or 1.0
         ux, uy = dx / d, dy / d
-        self.tongue.shoot(mox, moy, mox + ux * self.tongue.total,
-                          moy + uy * self.tongue.total, hit=False)
+        self.tongue.shoot(
+            mox,
+            moy,
+            mox + ux * self.tongue.total,
+            moy + uy * self.tongue.total,
+            hit=False,
+        )
 
     def _phase_hang(self, cursor, cursor_speed):
         tg = self.tongue
@@ -118,7 +131,7 @@ class CursorLicker:
         if cursor_speed > SPEED_RELEASE:
             self.outcome = "released"
             return "to_airborne"
-        if not tg.attached:         # 舌头保险丝自断 → 解除
+        if not tg.attached:  # 舌头保险丝自断 → 解除
             self.outcome = "released"
             return "to_airborne"
         # 锚点跟随光标（tongue.update 早于 body.step）

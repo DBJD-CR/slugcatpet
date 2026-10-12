@@ -1,4 +1,5 @@
 """机会主义舌头补救层：空中掠果时抢射舌粘住收绳，消费方每 tick 驱动。"""
+
 from __future__ import annotations
 import math
 
@@ -11,7 +12,7 @@ class TongueSnatch:
 
     def __init__(self, pet):
         self.pet = pet
-        self._prev_dist = None      # 判是否已掠过最近点
+        self._prev_dist = None  # 判是否已掠过最近点
         self._rescues = 0
         self._active = False
         self._timer = 0
@@ -63,7 +64,7 @@ class TongueSnatch:
             return False
         if self._rescues >= tuning.PLAN_SNATCH_MAX_TRIES:
             return False
-        if prev is None or dist <= prev:        # 尚未掠过最近点（仍在靠近）
+        if prev is None or dist <= prev:  # 尚未掠过最近点（仍在靠近）
             return False
         if dist > tg.total:
             return False
@@ -72,7 +73,7 @@ class TongueSnatch:
     def _maintain(self, tg, goal):
         """持有中：确认仍持有→判退出→粘住则压收绳。"""
         self._timer += 1
-        if tg.owner is not self:                # owner 变化即视为已丢失
+        if tg.owner is not self:  # owner 变化即视为已丢失
             self._clear()
             return
         if not goal.valid() or self._timer > tuning.PLAN_SNATCH_TIMEOUT:

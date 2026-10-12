@@ -1,4 +1,5 @@
 """工匠爆跳够取（caps.pyro）：普通起跳腾空第 PYRO_BOOST_AIR_TICKS tick 爆冲命中远/高目标；近目标或普通跳更省时不参赛。"""
+
 from __future__ import annotations
 import math
 
@@ -6,8 +7,13 @@ from ..behavior import tuning
 from ..cats.artificer import pyro
 from ..core.units import clampf
 from .ability import Ability, Estimate, RUNNING, DONE, GIVEUP, reach_assist, walk_band
-from .backflip_reach import (SETTLE_MAX, SETTLE_VX, best_launch_hit,
-                             sweep_hit_topsafe, takeoff_c0_h)
+from .backflip_reach import (
+    SETTLE_MAX,
+    SETTLE_VX,
+    best_launch_hit,
+    sweep_hit_topsafe,
+    takeoff_c0_h,
+)
 from .jump_arc import get_pyro_arc, PYRO_INPUTS
 from .jump_reach import JumpReach, PLAN_HIT_RADIUS
 
@@ -40,8 +46,16 @@ class PyroJumpReach(Ability):
         launch_y = pet._HL - takeoff_c0_h(stats)
         best = None
         for v in _VARIANTS:
-            r = best_launch_hit(get_pyro_arc(stats, v), gx, gy, launch_y,
-                                xmin, xmax, PLAN_HIT_RADIUS, hip.x)
+            r = best_launch_hit(
+                get_pyro_arc(stats, v),
+                gx,
+                gy,
+                launch_y,
+                xmin,
+                xmax,
+                PLAN_HIT_RADIUS,
+                hip.x,
+            )
             if r is not None and (best is None or r[2] < best[3]):
                 best = (r[0], v, r[1], r[2])
         if best is None:
@@ -57,8 +71,9 @@ class PyroJumpReach(Ability):
             return None
         _, _, hit, t = plan
         walk_t = t - hit - tuning.PLAN_STARTUP_TICKS
-        return Estimate(t, walk_t * tuning.PLAN_EN_RATE_LIGHT
-                        + hit * tuning.PLAN_EN_RATE_VIGOROUS)
+        return Estimate(
+            t, walk_t * tuning.PLAN_EN_RATE_LIGHT + hit * tuning.PLAN_EN_RATE_VIGOROUS
+        )
 
     def make_controller(self, goal):
         return PyroJumpReachController(self.pet, goal)
@@ -89,8 +104,10 @@ class PyroJumpReachController:
         xmin, xmax = walk_band(pet)
         lx = clampf(self._launch_x, xmin, xmax)
         if self.phase == "walk":
-            if (body.on_floor()
-                    and abs(body.chunk1.x - lx) <= tuning.PLAN_JUMP_TAKEOFF_EPS):
+            if (
+                body.on_floor()
+                and abs(body.chunk1.x - lx) <= tuning.PLAN_JUMP_TAKEOFF_EPS
+            ):
                 body.stop_walk()
                 self.phase = "settle"
                 return RUNNING
@@ -99,12 +116,11 @@ class PyroJumpReachController:
         if self.phase == "settle":
             body.stop_walk()
             self._settle += 1
-            still = (abs(body.chunk0.vx) < SETTLE_VX
-                     and abs(body.chunk1.vx) < SETTLE_VX)
+            still = abs(body.chunk0.vx) < SETTLE_VX and abs(body.chunk1.vx) < SETTLE_VX
             if body.on_floor() and (still or self._settle > SETTLE_MAX):
                 v = self._pick_at_launch(gx, gy)
                 if v is None:
-                    return GIVEUP              # 尚未起跳无脏态，不白耗燃料照爆
+                    return GIVEUP  # 尚未起跳无脏态，不白耗燃料照爆
                 self._variant = v
                 body.request_jump("stand")
                 self.phase = "air"
@@ -129,8 +145,16 @@ class PyroJumpReachController:
         stats = self.pet.cat.stats
         order = (self._variant,) + tuple(v for v in _VARIANTS if v != self._variant)
         for v in order:
-            if sweep_hit_topsafe(get_pyro_arc(stats, v), gx - c0.x,
-                                 gy - c0.y, tuning.GRAB_REACH, c0.y) is not None:
+            if (
+                sweep_hit_topsafe(
+                    get_pyro_arc(stats, v),
+                    gx - c0.x,
+                    gy - c0.y,
+                    tuning.GRAB_REACH,
+                    c0.y,
+                )
+                is not None
+            ):
                 return v
         return None
 
