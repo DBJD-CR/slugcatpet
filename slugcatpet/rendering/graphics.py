@@ -1,12 +1,17 @@
 """SlugcatGraphics：sprites 由代码定义，每帧从物理算位姿 / 帧 / 色。"""
+
 from __future__ import annotations
 import math
 import re
 
 from ..core.units import K_VEL, K_IMP, damp60, clampf, inv_lerp
-from ..core.gfxmath import (_hsl2rgb, _ang_from_up, _rot, _lerp, _catmull,
-                           SHOULDER_OFF_X, SHOULDER_OFF_Y, ARM_DIV, ARM_MAX,
-                           TAIL_RAD, TONGUE_WIDTH_SCALE)
+from ..core.gfxmath import (
+    _ang_from_up,
+    _rot,
+    _lerp,
+    SHOULDER_OFF_X,
+    SHOULDER_OFF_Y,
+)
 
 # head 骨参数
 HEAD_AIR = damp60(0.99)
@@ -37,7 +42,7 @@ _NO_ARM_AIM = {"l": None, "r": None}
 
 SLEEP_CURL_RATE = 0.01 * K_VEL
 GILLS_FLAT_RATE = 0.08 * K_VEL
-BLINK_MIN, BLINK_MAX = 2, 1800   # 自驱 blink 间隔（tick）
+BLINK_MIN, BLINK_MAX = 2, 1800  # 自驱 blink 间隔（tick）
 
 # 寒冷发白
 _COLD_ICY = (0.8, 0.8, 1.0)
@@ -45,9 +50,25 @@ _COLD_ICY = (0.8, 0.8, 1.0)
 
 def _lerp3(a, b, t):
     t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
-    return (a[0] + (b[0] - a[0]) * t,
-            a[1] + (b[1] - a[1]) * t,
-            a[2] + (b[2] - a[2]) * t)
+    return (
+        a[0] + (b[0] - a[0]) * t,
+        a[1] + (b[1] - a[1]) * t,
+        a[2] + (b[2] - a[2]) * t,
+    )
+
+
+DEFAULT_SCAR = (69, 40, 60)  # 面罩疤固定色 #45283C
+DEFAULT_GILL = (223, 45, 234)  # 鳃颜色固定色 #DF2DEA
+
+
+def _parse_color(c, default=DEFAULT_SCAR):
+    """把序列化颜色还原为 (r,g,b) int 元组；非法回落 default。"""
+    if isinstance(c, (tuple, list)) and len(c) >= 3:
+        try:
+            return (int(c[0]), int(c[1]), int(c[2]))
+        except (TypeError, ValueError):
+            return default
+    return default
 
 
 def _cold_blend(old01, hyp):
@@ -55,17 +76,22 @@ def _cold_blend(old01, hyp):
     b = _lerp3(old01, _COLD_ICY, hyp)
     return _lerp3(old01, b, 0.92)
 
-LOOK_LEAN_VCAP = 0.10       # 竖直 body-lean 上限
+
+LOOK_LEAN_VCAP = 0.10  # 竖直 body-lean 上限
+
+# 朝向符号（左右镜像）死区与滞回：判据在零附近抖动时不翻面，防头/脸高频左右抽搐
+FACE_SIDE_DEADZONE = 0.18  # 朝向信号绝对值低于此视为不明确，保持上帧
+FACE_SIDE_HYST = 0.30  # 反向信号须超过此值才允许翻面（滞回上沿）
 
 
-
-from ..rendering.graphics_draw import GraphicsDrawMixin
-from ..behavior import tuning
-from ..cats import default_def
+from ..rendering.graphics_draw import GraphicsDrawMixin  # noqa: E402
+from ..behavior import tuning  # noqa: E402
+from ..cats import default_def  # noqa: E402
 
 
 class GenericBone:
     """质点骨。"""
+
     __slots__ = ("x", "y", "vx", "vy", "lx", "ly", "pinned")
 
     def __init__(self, x, y):
@@ -81,9 +107,17 @@ class GenericBone:
         self.vx *= air
         self.vy *= air
 
-    def connect_to_point(self, px, py, host_vx, host_vy,
-                         connect_rad=HEAD_CONNECT_RAD, elastic=HEAD_ELASTIC,
-                         adapt_retain=HEAD_ADAPT_RETAIN, exaggerate=HEAD_EXAGGERATE):
+    def connect_to_point(
+        self,
+        px,
+        py,
+        host_vx,
+        host_vy,
+        connect_rad=HEAD_CONNECT_RAD,
+        elastic=HEAD_ELASTIC,
+        adapt_retain=HEAD_ADAPT_RETAIN,
+        exaggerate=HEAD_EXAGGERATE,
+    ):
         # 弹性拉向点 + 阻尼拴绳
         dx, dy = px - self.x, py - self.y
         if elastic > 0:
@@ -110,8 +144,20 @@ class HeadBone(GenericBone):
 
 class Hand:
     """手：Retracted / HuntAbsolutePosition 两态机。"""
-    __slots__ = ("x", "y", "lx", "ly", "vx", "vy", "j", "active",
-                 "retract_counter", "mode", "reached")
+
+    __slots__ = (
+        "x",
+        "y",
+        "lx",
+        "ly",
+        "vx",
+        "vy",
+        "j",
+        "active",
+        "retract_counter",
+        "mode",
+        "reached",
+    )
 
     def __init__(self, sx, sy, j):
         self.x = self.lx = sx
@@ -190,18 +236,22 @@ class Hand:
 class SlugcatGraphics(GraphicsDrawMixin):
     """sprites 由代码算位姿/帧/色，体色眼色来自 CatDef。"""
 
-    def __init__(self, body, layout=None, atlas=None, cat=None):
+    def __init__(self, body, layout=None, atlas=None, cat=None, colors=None):
         self.body = body
         self.L = layout
         self.atlas = atlas
         self.cat = cat or default_def()
         self.BODY = tuple(self.cat.body_color)
         self.EYE = tuple(self.cat.eye_color)
+        self.SCAR = DEFAULT_SCAR
+        self.GILL = DEFAULT_GILL
+        # 用户自定义配色（覆盖种族定义）；colors: {"body","eye","scar","gills"}
+        self.set_colors(colors or {})
 
         # petunit 构建后注入：tail_segs/tongue
         self.tail_segs = None
         self.tongue = None
-        self.gills = None            # 仅 caps.gills 猫非空
+        self.gills = None  # 仅 caps.gills 猫非空
 
         self.tail_smooth = True
         self.tail_smooth_subdiv = 4
@@ -222,12 +272,12 @@ class SlugcatGraphics(GraphicsDrawMixin):
         self.look_dir = (0.0, 0.0)
         self.sleeping = False
         self.sleep_curl = 0.0
-        self.gills_flat = 0.0          # 1=鳃锚退回世界水平（趴/睡）
+        self.gills_flat = 0.0  # 1=鳃锚退回世界水平（趴/睡）
         self.dead = False
-        self.stunned = False           # 晕脸 + 头帧0耷拉
+        self.stunned = False  # 晕脸 + 头帧0耷拉
         self.blink = 0
         self._blink_rng = _Rng(12345)
-        self._shiver_rng = _Rng(0xC01D)        # 发抖用，独立于 blink
+        self._shiver_rng = _Rng(0xC01D)  # 发抖用，独立于 blink
         self.anim_frame = 0
         self.disbalance = 0.0
         self.balance_counter = 0.0
@@ -236,24 +286,32 @@ class SlugcatGraphics(GraphicsDrawMixin):
         self.head_frame_override = None
         self.face_angle = 0.0
         self.face_scale_x = 1.0
+        self._face_side = 1.0  # 朝向符号滞回锁存，防零附近抖动翻面
         self.face_offset = (0.0, 2.0)
 
         fam = self.cat.frames
         self._head_frames = self._family_frames(*fam["head"])
         self._face_frames = self._family_frames(*fam["face"])
         self._face_blink_frames = self._family_frames(*fam["face_blink"])
-        self._face_a_frames = (self._family_frames(*fam["face_open"])
-                               if "face_open" in fam else [])
-        self._face_mirror_frames = (self._family_frames(*fam["face_mirror"])
-                                    if "face_mirror" in fam else [])
+        self._face_a_frames = (
+            self._family_frames(*fam["face_open"]) if "face_open" in fam else []
+        )
+        self._face_mirror_frames = (
+            self._family_frames(*fam["face_mirror"]) if "face_mirror" in fam else []
+        )
         self._face_scar_frame = fam["face_scar"][1] if "face_scar" in fam else None
         self._leg_walk_frames = self._family_frames(*fam["legs_walk"])
         self._leg_crawl_frames = self._family_frames(*fam["legs_crawl"])
         air_key, air_frame = fam["legs_air"]
-        self._leg_air_frame = (air_frame
-                               if self.atlas is not None and self.atlas.atlases[air_key].has(air_frame)
-                               else (self._leg_walk_frames[0] if self._leg_walk_frames
-                                     else fam["legs_walk"][1] + "0"))
+        self._leg_air_frame = (
+            air_frame
+            if self.atlas is not None and self.atlas.atlases[air_key].has(air_frame)
+            else (
+                self._leg_walk_frames[0]
+                if self._leg_walk_frames
+                else fam["legs_walk"][1] + "0"
+            )
+        )
 
         self.ascension = None
         self._asc_face_color = None
@@ -266,6 +324,18 @@ class SlugcatGraphics(GraphicsDrawMixin):
         self._rope_pull_pos = 0.4
 
         self._legs_scale_x = 1.0
+
+    def set_colors(self, colors):
+        """应用自定义配色；缺项回落种族/默认色。可运行期调用即时生效。"""
+        self.USER_BODY = tuple(colors["body"]) if colors.get("body") else None
+        self.USER_EYE = tuple(colors["eye"]) if colors.get("eye") else None
+        c = colors.get("scar")
+        self.USER_SCAR = _parse_color(c) if c else None
+        g = colors.get("gills")
+        self.USER_GILL = _parse_color(g, DEFAULT_GILL) if g else None
+        self.SCAR = self.USER_SCAR or DEFAULT_SCAR
+        self.GILL = self.USER_GILL or DEFAULT_GILL
+
     @property
     def facing(self):
         return self.body.facing
@@ -280,7 +350,9 @@ class SlugcatGraphics(GraphicsDrawMixin):
 
     def body_axis(self):
         """体轴角。"""
-        return _ang_from_up(self.draw0[0] - self.draw1[0], self.draw0[1] - self.draw1[1])
+        return _ang_from_up(
+            self.draw0[0] - self.draw1[0], self.draw0[1] - self.draw1[1]
+        )
 
     def update(self):
         """每帧推进，在 body.step() 之后调用。"""
@@ -290,11 +362,13 @@ class SlugcatGraphics(GraphicsDrawMixin):
         if b.cold > 0.0:
             base = self.cat.body_color
             base01 = (base[0] / 255.0, base[1] / 255.0, base[2] / 255.0)
-            cq = round(b.cold * 12) / 12   # 量化冷度，压缩 tint 缓存长尾
+            cq = round(b.cold * 12) / 12  # 量化冷度，压缩 tint 缓存长尾
             r, g, bl = _cold_blend(base01, cq)
             self.BODY = (int(r * 255), int(g * 255), int(bl * 255))
         else:
-            self.BODY = tuple(self.cat.body_color)
+            self.BODY = self.USER_BODY or tuple(self.cat.body_color)
+        self.EYE = self.USER_EYE or tuple(self.cat.eye_color)
+        self.GILL = self.USER_GILL or DEFAULT_GILL
 
         self._last_draw0, self._last_draw1 = list(self.draw0), list(self.draw1)
         self.draw0 = [c0.x, c0.y]
@@ -318,8 +392,7 @@ class SlugcatGraphics(GraphicsDrawMixin):
             if anim in ("ClimbOnBeam", "HangFromBeam", "GetUpOnBeam"):
                 self.anim_frame = (self.anim_frame + 1) % 20
             elif anim == "StandOnBeam":
-                self.anim_frame = ((self.anim_frame + 1) % 7
-                                   if abs(c1.vx) > 0.5 else 0)
+                self.anim_frame = (self.anim_frame + 1) % 7 if abs(c1.vx) > 0.5 else 0
             else:
                 self.anim_frame = 0
         elif b.bodyMode == "ZeroG":
@@ -401,11 +474,13 @@ class SlugcatGraphics(GraphicsDrawMixin):
         elif b.bodyMode == "Crawl":
             sway_slow = math.sin(af / 21.0 * TAU)
             sway_fast = math.cos(af / 14.0 * TAU)
-            hip_drop = 0.0 if getattr(b, "_ctrl_super_launch", 0) > 19 else 1.0  # 自主态无该字段则不拱
+            hip_drop = (
+                0.0 if getattr(b, "_ctrl_super_launch", 0) > 19 else 1.0
+            )  # 自主态无该字段则不拱
             self.draw0[0] += sway_fast * flip * 2.0
             self.draw0[1] -= 1.5 * sway_slow + 3.0
             self.head.vy -= 0.5 * sway_slow + 0.5
-            self.head.vx += (-1.0 if c0.x < c1.x else 1.0)
+            self.head.vx += -1.0 if c0.x < c1.x else 1.0
             self.draw1[0] += -3.0 * sway_slow * flip
             self.draw1[1] -= -1.5 * sway_fast + 7.0 - 3.0 * hip_drop
 
@@ -430,7 +505,7 @@ class SlugcatGraphics(GraphicsDrawMixin):
             self.draw0[1] += (ddx / dl) * sway
 
         elif b.bodyMode == "Swimming":
-            sc = math.sin(b.swim_cycle * TAU)
+            sc = math.sin((b.swim_cycle % 1.0) * TAU)  # 相位周期化，防累积抖动
             if b.swim_mode == "deep" or getattr(b, "swim_input_x", 0) != 0:
                 dvx, dvy = c1.x - c0.x, c1.y - c0.y
                 dl = math.hypot(dvx, dvy) or 1.0
@@ -438,7 +513,7 @@ class SlugcatGraphics(GraphicsDrawMixin):
                 self.draw1[0] += px * sc * 5.0
                 self.draw1[1] += py * sc * 5.0
             if b.lungs_exhausted:
-                self.head.vy -= sc * 1.0                  # y↓ 取反
+                self.head.vy -= sc * 1.0  # y↓ 取反
                 self.draw0[1] -= sc * 2.5
 
     def _update_blink(self):
@@ -450,7 +525,9 @@ class SlugcatGraphics(GraphicsDrawMixin):
             self.blink = self._blink_rng.randint(4, self._blink_rng.randint(4, 15))
         if self.sleeping and self.sleep_curl > 0.5:
             self.blink = max(2, self.blink)
-        if (self.body.bodyMode == "Swimming" and getattr(self.body, "lungs_exhausted", False)):
+        if self.body.bodyMode == "Swimming" and getattr(
+            self.body, "lungs_exhausted", False
+        ):
             self.blink = max(self.blink, 1)
 
     def _apply_sleep_curl_pose(self):
@@ -515,8 +592,18 @@ class SlugcatGraphics(GraphicsDrawMixin):
         base_x = (hip_x + body_x) * 0.5
         base_y = (hip_y + body_y) * 0.5
         head_ang = _ang_from_up(hx - base_x, hy - base_y)
-        look_x = (self.last_look_dir[0] + self.look_dir[0]) * 0.5 * 3.0 * (1.0 - self.sleep_curl)
-        look_y = (self.last_look_dir[1] + self.look_dir[1]) * 0.5 * 3.0 * (1.0 - self.sleep_curl)
+        look_x = (
+            (self.last_look_dir[0] + self.look_dir[0])
+            * 0.5
+            * 3.0
+            * (1.0 - self.sleep_curl)
+        )
+        look_y = (
+            (self.last_look_dir[1] + self.look_dir[1])
+            * 0.5
+            * 3.0
+            * (1.0 - self.sleep_curl)
+        )
         if self.sleep_curl > 0.0:
             self.head_frame_override = None
             side = 1.0 if body_x >= hip_x else -1.0
@@ -529,7 +616,7 @@ class SlugcatGraphics(GraphicsDrawMixin):
             self.head_frame_override = None
             self.head_angle = head_ang
             self.face_angle = head_ang
-            self.face_scale_x = -1.0 if head_ang < 0 else 1.0
+            self.face_scale_x = self._face_side  # 晕/死保持朝向，防抖
             look_x = look_y = 0.0
         elif b.bodyMode == "Crawl":
             self.head_frame_override = 7
@@ -541,12 +628,12 @@ class SlugcatGraphics(GraphicsDrawMixin):
             self.head_frame_override = None
             self.head_angle = head_ang
             self.face_angle = head_ang
-            self.face_scale_x = -1.0 if head_ang < 0.0 else 1.0
+            self.face_scale_x = self._compute_face_side(head_ang)
         elif b.bodyMode == "Swimming":
             self.head_frame_override = None
             self.head_angle = head_ang
             self.face_angle = head_ang
-            self.face_scale_x = -1.0 if head_ang < 0.0 else 1.0
+            self.face_scale_x = self._compute_face_side(head_ang)
         elif b.bodyMode == "Stand" and (b.is_moving() or b.move_dir != 0):
             self.head_frame_override = 6
             self.head_angle = head_ang
@@ -557,12 +644,19 @@ class SlugcatGraphics(GraphicsDrawMixin):
             self.head_frame_override = None
             self.head_angle = head_ang
             self.face_angle = 0.0
-            self.face_scale_x = (1.0 if look_x >= 0 else -1.0) if abs(look_x) >= 0.1 else (-1.0 if head_ang < 0 else 1.0)
+            sig = look_x if abs(look_x) >= FACE_SIDE_DEADZONE else head_ang
+            self.face_scale_x = self._compute_face_side(sig)
         self.face_offset = (look_x, look_y + 2.0)
-        if b.animation == "Flip":
-            r = math.radians(self.head_angle)
-            self.face_offset = (self.face_offset[0] + math.sin(r) * 4.0,
-                                self.face_offset[1] - math.cos(r) * 4.0)
+
+    def _compute_face_side(self, sig):
+        """朝向符号滞回：sig 在死区内保持上帧，反向须越滞回上沿才翻面，防空点高频翻面抽搐。"""
+        s = self._face_side
+        if sig > FACE_SIDE_DEADZONE and (s > 0.0 or sig > FACE_SIDE_HYST):
+            s = 1.0
+        elif sig < -FACE_SIDE_DEADZONE and (s < 0.0 or sig < -FACE_SIDE_HYST):
+            s = -1.0
+        self._face_side = s
+        return s
 
     def _update_legs(self):
         """腿部弹性骨推进。"""
@@ -572,20 +666,39 @@ class SlugcatGraphics(GraphicsDrawMixin):
 
         anim = getattr(b, "animation", None)
         if b.bodyMode == "ClimbingOnBeam" and anim in (
-                "ClimbOnBeam", "BeamTip", "StandOnBeam", "HangFromBeam", "GetUpOnBeam"):
+            "ClimbOnBeam",
+            "BeamTip",
+            "StandOnBeam",
+            "HangFromBeam",
+            "GetUpOnBeam",
+        ):
             c0 = b.chunk0
             if anim == "ClimbOnBeam":
                 ph = self.anim_frame / 20.0 * 2.0 * math.pi
                 tx = c0.x + (-b.facing) * (5.0 - math.sin(ph))
                 ty = c0.y + 16.0 + 5.0 * math.cos(ph)
-                self.legs.connect_to_point(tx, ty, 0.0, 0.0, connect_rad=0.0,
-                                           elastic=LEGS_ELASTIC, adapt_retain=LEGS_ADAPT_RETAIN,
-                                           exaggerate=LEGS_EXAGGERATE)
+                self.legs.connect_to_point(
+                    tx,
+                    ty,
+                    0.0,
+                    0.0,
+                    connect_rad=0.0,
+                    elastic=LEGS_ELASTIC,
+                    adapt_retain=LEGS_ADAPT_RETAIN,
+                    exaggerate=LEGS_EXAGGERATE,
+                )
                 self.legs_dir[1] += 1.0
             elif anim == "BeamTip":
-                self.legs.connect_to_point(c1.x, c1.y + 8.0, 0.0, 10.0, connect_rad=0.0,
-                                           elastic=LEGS_ELASTIC, adapt_retain=LEGS_ADAPT_RETAIN,
-                                           exaggerate=LEGS_EXAGGERATE)
+                self.legs.connect_to_point(
+                    c1.x,
+                    c1.y + 8.0,
+                    0.0,
+                    10.0,
+                    connect_rad=0.0,
+                    elastic=LEGS_ELASTIC,
+                    adapt_retain=LEGS_ADAPT_RETAIN,
+                    exaggerate=LEGS_EXAGGERATE,
+                )
                 dx = c1.x - self.draw0[0]
                 dy = (c1.y + 10.0) - self.draw0[1]
                 dl = math.hypot(dx, dy) or 1.0
@@ -594,16 +707,30 @@ class SlugcatGraphics(GraphicsDrawMixin):
             elif anim == "StandOnBeam":
                 tx = c1.x + self.legs_dir[0] * 8.0
                 ty = c1.y - 1.0
-                self.legs.connect_to_point(tx, ty, c1.vx, LEGS_HOST_Y, connect_rad=5.0,
-                                           elastic=LEGS_ELASTIC, adapt_retain=LEGS_ADAPT_RETAIN,
-                                           exaggerate=LEGS_EXAGGERATE)
+                self.legs.connect_to_point(
+                    tx,
+                    ty,
+                    c1.vx,
+                    LEGS_HOST_Y,
+                    connect_rad=5.0,
+                    elastic=LEGS_ELASTIC,
+                    adapt_retain=LEGS_ADAPT_RETAIN,
+                    exaggerate=LEGS_EXAGGERATE,
+                )
                 self.legs_dir[1] += 1.0
             else:
                 tx = c1.x + self.legs_dir[0] * 8.0
                 ty = c1.y + (5.0 if anim == "HangFromBeam" else 2.0)
-                self.legs.connect_to_point(tx, ty, c1.vx, LEGS_HOST_Y, connect_rad=LEGS_CONNECT_RAD,
-                                           elastic=LEGS_ELASTIC, adapt_retain=LEGS_ADAPT_RETAIN,
-                                           exaggerate=LEGS_EXAGGERATE)
+                self.legs.connect_to_point(
+                    tx,
+                    ty,
+                    c1.vx,
+                    LEGS_HOST_Y,
+                    connect_rad=LEGS_CONNECT_RAD,
+                    elastic=LEGS_ELASTIC,
+                    adapt_retain=LEGS_ADAPT_RETAIN,
+                    exaggerate=LEGS_EXAGGERATE,
+                )
                 self.legs_dir[0] += c1.vx * 0.01
                 self.legs_dir[1] += c1.vy * 0.01 + 0.05
             d = math.hypot(self.legs_dir[0], self.legs_dir[1]) or 1.0
@@ -616,9 +743,16 @@ class SlugcatGraphics(GraphicsDrawMixin):
             dx, dy = c1.x - c0.x, c1.y - c0.y
             dl = math.hypot(dx, dy) or 1.0
             ux, uy = dx / dl, dy / dl
-            self.legs.connect_to_point(c1.x + ux * 4.0, c1.y + uy * 4.0, c1.vx, c1.vy,
-                                       connect_rad=LEGS_CONNECT_RAD, elastic=0.0,
-                                       adapt_retain=0.8, exaggerate=0.0)
+            self.legs.connect_to_point(
+                c1.x + ux * 4.0,
+                c1.y + uy * 4.0,
+                c1.vx,
+                c1.vy,
+                connect_rad=LEGS_CONNECT_RAD,
+                elastic=0.0,
+                adapt_retain=0.8,
+                exaggerate=0.0,
+            )
             self.legs_dir[0] = ux
             self.legs_dir[1] = uy
             self.legs.vx += ux * 0.2
@@ -628,22 +762,36 @@ class SlugcatGraphics(GraphicsDrawMixin):
             self.legs_dir[1] /= d
             return
 
-
         if c1.on_floor:
             tx = c1.x + self.legs_dir[0] * 8.0
             ty = c1.y - 1.0
-            self.legs.connect_to_point(tx, ty, c1.vx, LEGS_HOST_Y,
-                                       connect_rad=5.0, elastic=LEGS_ELASTIC,
-                                       adapt_retain=LEGS_ADAPT_RETAIN,
-                                       exaggerate=LEGS_EXAGGERATE)
-            self.legs_dir[0] -= b.chunk1.on_slope if hasattr(b.chunk1, "on_slope") else 0.0
+            self.legs.connect_to_point(
+                tx,
+                ty,
+                c1.vx,
+                LEGS_HOST_Y,
+                connect_rad=5.0,
+                elastic=LEGS_ELASTIC,
+                adapt_retain=LEGS_ADAPT_RETAIN,
+                exaggerate=LEGS_EXAGGERATE,
+            )
+            self.legs_dir[0] -= (
+                b.chunk1.on_slope if hasattr(b.chunk1, "on_slope") else 0.0
+            )
             self.legs_dir[1] += 1.0
         else:
             tx = c1.x + self.legs_dir[0] * 8.0
             ty = c1.y + 2.0
-            self.legs.connect_to_point(tx, ty, c1.vx, LEGS_HOST_Y,
-                                       connect_rad=LEGS_CONNECT_RAD, elastic=LEGS_ELASTIC,
-                                       adapt_retain=LEGS_ADAPT_RETAIN, exaggerate=LEGS_EXAGGERATE)
+            self.legs.connect_to_point(
+                tx,
+                ty,
+                c1.vx,
+                LEGS_HOST_Y,
+                connect_rad=LEGS_CONNECT_RAD,
+                elastic=LEGS_ELASTIC,
+                adapt_retain=LEGS_ADAPT_RETAIN,
+                exaggerate=LEGS_EXAGGERATE,
+            )
             self.legs_dir[0] += c1.vx * 0.01
             self.legs_dir[1] += c1.vy * 0.01 + 0.05
 
@@ -670,11 +818,16 @@ class SlugcatGraphics(GraphicsDrawMixin):
             if aim is None and not self.dead:
                 anim = getattr(b, "animation", None)
                 if b.bodyMode == "ClimbingOnBeam" and anim in (
-                        "ClimbOnBeam", "BeamTip", "StandOnBeam", "HangFromBeam", "GetUpOnBeam"):
+                    "ClimbOnBeam",
+                    "BeamTip",
+                    "StandOnBeam",
+                    "HangFromBeam",
+                    "GetUpOnBeam",
+                ):
                     aim, speed, quickness = self._beam_hand_target(idx, anim, spine_ang)
                 elif b.bodyMode == "Crawl":
                     if self.sleep_curl > 0.0:
-                        pass    # 睡觉手缩回贴肩，勿伸向腹部目标
+                        pass  # 睡觉手缩回贴肩，勿伸向腹部目标
                     else:
                         c0 = b.chunk0
                         vspd = math.hypot(c0.vx, c0.vy)
@@ -686,7 +839,10 @@ class SlugcatGraphics(GraphicsDrawMixin):
                         aim = (c0.x + off_x + lead_x, crawl_ground_y)
                         speed = CRAWL_HUNT_SPEED
                         quickness = CRAWL_QUICKNESS
-                elif b.bodyMode == "ZeroG" and getattr(b, "animation", None) == "ZeroGPoleGrab":
+                elif (
+                    b.bodyMode == "ZeroG"
+                    and getattr(b, "animation", None) == "ZeroGPoleGrab"
+                ):
                     px = getattr(b, "pole_x", b.chunk0.x)
                     py = getattr(b, "pole_y", b.chunk0.y)
                     pole = getattr(b, "zerog_pole", None)
@@ -700,7 +856,9 @@ class SlugcatGraphics(GraphicsDrawMixin):
                     aim = (px + axu * off, py + ayu * off)
                 elif b.bodyMode == "ZeroG":
                     ph = self.anim_frame / 240.0 * 2.0 * math.pi + idx * math.pi
-                    ox, oy = _rot(sh_local_sign * 6.0, 8.0 + 2.0 * math.sin(ph), spine_ang)
+                    ox, oy = _rot(
+                        sh_local_sign * 6.0, 8.0 + 2.0 * math.sin(ph), spine_ang
+                    )
                     aim = (self.draw0[0] + ox, self.draw0[1] + oy)
                     speed = 3.0
                     quickness = 0.3
@@ -708,7 +866,7 @@ class SlugcatGraphics(GraphicsDrawMixin):
                     # 潜水=扇形划桨（相对目标）；浮水=贴水面线划圆（绝对目标）
                     c0, c1 = b.chunk0, b.chunk1
                     sw = b.swim_cycle
-                    paddle_t = sw / 3.0 if sw < 3.0 else (1.0 - (sw - 3.0))
+                    paddle_t = (sw % 3.0) / 3.0  # 恒落 [0,1)，防 sw≥3 翻入高频负区
                     ix = getattr(b, "swim_input_x", 0)
                     if b.swim_mode == "deep":
                         stroke = (1.0 - inv_lerp(0.5, 1.0, paddle_t)) ** 1.5
@@ -721,12 +879,24 @@ class SlugcatGraphics(GraphicsDrawMixin):
                         aim = (c0.x + ox, c0.y + oy)
                     else:
                         ws = getattr(b, "water_surface", None)
-                        ahx = c0.x + _lerp(sh_local_sign * 30.0,
-                                           ix * 10.0 * (-math.sin(paddle_t * 2.0 * math.pi)), 0.5)
-                        ahy = (ws.level_at(ahx) + 7.0) if ws is not None else (c0.y + 7.0)
-                        sang = math.radians(360.0 * paddle_t * (1.0 if ix == 0 else -ix))
+                        ahx = c0.x + _lerp(
+                            sh_local_sign * 30.0,
+                            ix * 10.0 * (-math.sin(paddle_t * 2.0 * math.pi)),
+                            0.5,
+                        )
+                        ahy = (
+                            (ws.level_at(ahx) + 7.0) if ws is not None else (c0.y + 7.0)
+                        )
+                        sang = math.radians(
+                            360.0 * paddle_t * (1.0 if ix == 0 else -ix)
+                        )
                         srad = sh_local_sign * (5.0 if ix == 0 else 10.0)
-                        aim = (ahx + math.sin(sang) * srad, ahy - math.cos(sang) * srad)  # y↓ 取反
+                        if getattr(b, "_swim_resting", False):
+                            srad *= 0.35  # 水面休息：手摆动幅度减小，防多动
+                        aim = (
+                            ahx + math.sin(sang) * srad,
+                            ahy - math.cos(sang) * srad,
+                        )  # y↓ 取反
                     speed = 5.0
                     quickness = 0.5
 
@@ -740,10 +910,10 @@ class SlugcatGraphics(GraphicsDrawMixin):
             px = getattr(b, "pole_x", c1.x)
             flip = b.facing
             ph = self.anim_frame / 20.0 * 2.0 * math.pi
-            b_j1 = (j == 1)
-            b_fp = (flip == 1)
+            b_j1 = j == 1
+            b_fp = flip == 1
             f = math.cos(ph) if (b_j1 != b_fp) else math.sin(ph)
-            cond = (b_j1 == b_fp)
+            cond = b_j1 == b_fp
             off_y_up = (-3.0 if cond else 3.0) + 6.0 * f
             hx = px + (-flip if cond else flip)
             hy = c0.y - off_y_up
@@ -770,19 +940,24 @@ class SlugcatGraphics(GraphicsDrawMixin):
 
     def tail_root_world(self):
         """尾网根世界坐标 = 75% 臀 + 25% 上身。"""
-        return ((self.draw1[0] * 3.0 + self.draw0[0]) / 4.0,
-                (self.draw1[1] * 3.0 + self.draw0[1]) / 4.0)
+        return (
+            (self.draw1[0] * 3.0 + self.draw0[0]) / 4.0,
+            (self.draw1[1] * 3.0 + self.draw0[1]) / 4.0,
+        )
 
     def mouth_world(self):
-        return (self.head.x + self.face_offset[0],
-                self.head.y + self.face_offset[1])
+        return (self.head.x + self.face_offset[0], self.head.y + self.face_offset[1])
 
     def _family_frames(self, atlas_key, prefix):
         def idx(name):
-            m = re.search(r'(\d+)$', name)
+            m = re.search(r"(\d+)$", name)
             return int(m.group(1)) if m else -1
-        names = [n for n in self.atlas.atlases[atlas_key].frame_names()
-                 if re.sub(r'\d+$', '', n) == prefix]
+
+        names = [
+            n
+            for n in self.atlas.atlases[atlas_key].frame_names()
+            if re.sub(r"\d+$", "", n) == prefix
+        ]
         return sorted(names, key=idx)
 
     def _face_angle_index(self):
@@ -809,8 +984,10 @@ class SlugcatGraphics(GraphicsDrawMixin):
             return 0
         return int(round(abs(self.head_angle / 360.0 * 34.0)))
 
+
 class _Rng:
     """确定性 LCG（blink/face 用）。"""
+
     __slots__ = ("s",)
 
     def __init__(self, seed):
@@ -826,4 +1003,4 @@ class _Rng:
         return lo + self._next() % (hi - lo)
 
     def random(self):
-        return self._next() / 2147483647.0   # [0,1]
+        return self._next() / 2147483647.0  # [0,1]
