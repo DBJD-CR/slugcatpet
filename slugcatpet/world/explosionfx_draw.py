@@ -1,17 +1,32 @@
 """爆炸特效绘制。"""
+
 from __future__ import annotations
 
 import math
 import random
 
 from PySide6.QtCore import QPointF, Qt
-from PySide6.QtGui import (QBrush, QColor, QLinearGradient, QPainter,
-                           QPen, QPolygonF, QRadialGradient)
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QLinearGradient,
+    QPainter,
+    QPen,
+    QPolygonF,
+    QRadialGradient,
+)
 
 from ..core.units import inv_lerp, lerp
-from .explosionfx import (ExplosionLight, ExplosionSmoke, ExplosionSpikes,
-                          FlashingSmoke, ShockWave, SootMark, Spark,
-                          split_fx_layers)
+from .explosionfx import (
+    ExplosionLight,
+    ExplosionSmoke,
+    ExplosionSpikes,
+    FlashingSmoke,
+    ShockWave,
+    SootMark,
+    Spark,
+    split_fx_layers,
+)
 
 _PLUS = QPainter.CompositionMode.CompositionMode_Plus
 _OVER = QPainter.CompositionMode.CompositionMode_SourceOver
@@ -20,9 +35,11 @@ _OVER = QPainter.CompositionMode.CompositionMode_SourceOver
 def _clerp(a, b, t):
     """RGB 三元组 lerp（t 钳 [0,1]）。"""
     t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
-    return (int(a[0] + (b[0] - a[0]) * t),
-            int(a[1] + (b[1] - a[1]) * t),
-            int(a[2] + (b[2] - a[2]) * t))
+    return (
+        int(a[0] + (b[0] - a[0]) * t),
+        int(a[1] + (b[1] - a[1]) * t),
+        int(a[2] + (b[2] - a[2]) * t),
+    )
 
 
 def _smoke_scale(life):
@@ -36,13 +53,25 @@ def _smoke_blobs(s, r, u, sign):
     """主団+随机 lobe 列表：(x,y,半径,权重,相位)；sign 区分两层。"""
     blobs = [(s.x, s.y, r * (1.0 - 0.22 * u), 0.75, 0.0)]
     for ang0, orbit, radf, phase, freq, wrot, erode in s.draw_lobes:
-        ang = math.radians(ang0 * sign + s.rotation * wrot
-                           + 28.0 * math.sin(phase + u * freq))
-        off = r * orbit * (1.0 + 0.35 * u) * (1.0 + 0.15 * math.sin(phase * 1.7 + u * freq * 1.3))
-        lr = r * radf * (1.0 - erode * u) * (1.0 + 0.12 * math.cos(phase + u * freq * 0.8))
+        ang = math.radians(
+            ang0 * sign + s.rotation * wrot + 28.0 * math.sin(phase + u * freq)
+        )
+        off = (
+            r
+            * orbit
+            * (1.0 + 0.35 * u)
+            * (1.0 + 0.15 * math.sin(phase * 1.7 + u * freq * 1.3))
+        )
+        lr = (
+            r
+            * radf
+            * (1.0 - erode * u)
+            * (1.0 + 0.12 * math.cos(phase + u * freq * 0.8))
+        )
         if lr > 0.5:
-            blobs.append((s.x + math.cos(ang) * off, s.y + math.sin(ang) * off,
-                          lr, 0.55, phase))
+            blobs.append(
+                (s.x + math.cos(ang) * off, s.y + math.sin(ang) * off, lr, 0.55, phase)
+            )
     return blobs
 
 
@@ -52,8 +81,12 @@ def _smoke_colors(s, life):
     c1 = _clerp(s.COLOR_B, s.COLOR_A, life)
     if isinstance(s, FlashingSmoke):
         flash = s.flash_t()
-        c0 = _clerp(c0, _clerp(s.effect_color, s.white_color, math.pow(flash, 1.2)), flash)
-        c1 = _clerp(c1, _clerp(s.effect_color, s.white_color, math.pow(flash, 0.6)), flash)
+        c0 = _clerp(
+            c0, _clerp(s.effect_color, s.white_color, math.pow(flash, 1.2)), flash
+        )
+        c1 = _clerp(
+            c1, _clerp(s.effect_color, s.white_color, math.pow(flash, 0.6)), flash
+        )
     return c0, c1
 
 
@@ -62,9 +95,9 @@ def draw_smoke(p, s):
     sc = _smoke_scale(life)
     if sc <= 0.0:
         return
-    u = 1.0 - life                       # 寿命进度 0→1
+    u = 1.0 - life  # 寿命进度 0→1
     base = min(1.0, math.pow(max(s.life, 0.0), 1.8))
-    comp = 0.036 + 0.064 * math.pow(life, 2.2)   # 透明度曲线
+    comp = 0.036 + 0.064 * math.pow(life, 2.2)  # 透明度曲线
     c0, c1 = _smoke_colors(s, life)
     p.setCompositionMode(_OVER)
     p.setPen(Qt.PenStyle.NoPen)
@@ -77,7 +110,7 @@ def draw_smoke(p, s):
             aa = int(a * w)
             if aa <= 0:
                 continue
-            mid = 0.38 + 0.14 * (phase % 1.0)    # 逐 lobe 抖动，外缘碎化
+            mid = 0.38 + 0.14 * (phase % 1.0)  # 逐 lobe 抖动，外缘碎化
             g = QRadialGradient(QPointF(bx, by), br)
             g.setColorAt(0.0, QColor(*col, aa))
             g.setColorAt(mid, QColor(*col, int(aa * 0.6)))
@@ -87,7 +120,7 @@ def draw_smoke(p, s):
             p.drawEllipse(QPointF(bx, by), br, br)
 
 
-def draw_light(p, l):
+def draw_light(p, l):  # noqa: E741
     life = min(max(l.life, 0.0), 1.0)
     r = l.radius()
     if r <= 0.5:
@@ -128,7 +161,9 @@ def draw_spikes(p, sp):
             continue
         col = _clerp(sp.color, (255, 255, 255), white_t)
         # 线性渐变近似顶点插值
-        g = QLinearGradient(QPointF(*tip), QPointF((b1[0] + b2[0]) / 2, (b1[1] + b2[1]) / 2))
+        g = QLinearGradient(
+            QPointF(*tip), QPointF((b1[0] + b2[0]) / 2, (b1[1] + b2[1]) / 2)
+        )
         g.setColorAt(0.0, QColor(*col, a))
         g.setColorAt(1.0, QColor(*col, 0))
         p.setBrush(QBrush(g))
@@ -138,13 +173,13 @@ def draw_spikes(p, sp):
 def draw_spark(p, s):
     tx, ty = s.ll_x, s.ll_y
     d = math.hypot(s.x - tx, s.y - ty)
-    if d < 9.0:                          # 拖尾最短 9px
+    if d < 9.0:  # 拖尾最短 9px
         if d < 1e-9:
             dx, dy = 0.0, 1.0
         else:
             dx, dy = (tx - s.x) / d, (ty - s.y) / d
         tx, ty = s.x + dx * 9.0, s.y + dy * 9.0
-    t = inv_lerp(0.0, 0.1, s.life)       # 濒死拖尾收缩
+    t = inv_lerp(0.0, 0.1, s.life)  # 濒死拖尾收缩
     tx, ty = lerp(s.x, tx, t), lerp(s.y, ty, t)
     ddx, ddy = s.x - tx, s.y - ty
     dd = math.hypot(ddx, ddy)
@@ -154,8 +189,11 @@ def draw_spark(p, s):
     p.setCompositionMode(_PLUS)
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(QColor(*s.color, 255))
-    p.drawPolygon(QPolygonF([QPointF(s.x + px, s.y + py),
-                             QPointF(s.x - px, s.y - py), QPointF(tx, ty)]))
+    p.drawPolygon(
+        QPolygonF(
+            [QPointF(s.x + px, s.y + py), QPointF(s.x - px, s.y - py), QPointF(tx, ty)]
+        )
+    )
 
 
 def draw_shockwave(p, w):
@@ -181,7 +219,7 @@ def draw_soot(p, m):
     a = m.alpha()
     if a <= 0.0:
         return
-    col = (25, 22, 26)   # 取舍：固定近黑替代调色板
+    col = (25, 22, 26)  # 取舍：固定近黑替代调色板
     base = int(200 * a)
     p.setCompositionMode(_OVER)
     p.setPen(Qt.PenStyle.NoPen)
@@ -195,9 +233,32 @@ def draw_soot(p, m):
         p.drawEllipse(QPointF(x, y), r, r)
 
 
-_DRAW = {ExplosionSmoke: draw_smoke, FlashingSmoke: draw_smoke,
-         ExplosionLight: draw_light, ExplosionSpikes: draw_spikes,
-         Spark: draw_spark, ShockWave: draw_shockwave, SootMark: draw_soot}
+def fx_extent(q):
+    """粒子保守视觉半径，供窗口脏矩形包围，避免整窗重绘。"""
+    if isinstance(q, (ExplosionSmoke, FlashingSmoke)):
+        return 170.0 * q.rad + 8.0
+    if isinstance(q, ExplosionLight):
+        return q.rad
+    if isinstance(q, ShockWave):
+        return q.size
+    if isinstance(q, ExplosionSpikes):
+        return q.inner_rad + max((v[0] for v in q.values), default=0.0) + 8.0
+    if isinstance(q, SootMark):
+        return q.rad * 1.2
+    if isinstance(q, Spark):
+        return 48.0
+    return 64.0
+
+
+_DRAW = {
+    ExplosionSmoke: draw_smoke,
+    FlashingSmoke: draw_smoke,
+    ExplosionLight: draw_light,
+    ExplosionSpikes: draw_spikes,
+    Spark: draw_spark,
+    ShockWave: draw_shockwave,
+    SootMark: draw_soot,
+}
 
 
 def _draw_sorted(p, fx):
