@@ -1,4 +1,5 @@
 """竖杆攀爬控制器：approach→climb→tip→摔落/下杆，每 tick 调 update(want_dismount)，返回 True=结束。"""
+
 from __future__ import annotations
 import math
 
@@ -14,6 +15,9 @@ TIP_ENTER_PAD = 3.0
 TIP_TIMEOUT = 1200
 DESCEND_TIMEOUT = 400
 ARC_R = 17.0
+PUSH_EVICT_DIST = 40.0  # 挤顶：脚下接近杆顶该距内触发顶人
+TIP_OCCUPY_PAD = 22.0  # 判定他猫占顶：其 hip 距顶该距内
+POLE_SAME_EPS = 8.0  # 同一根竖杆的 x 容差
 
 
 class PoleClimber:
@@ -29,6 +33,7 @@ class PoleClimber:
         self.rng = rng
         self.disbalance = 0.0
         self.balance_counter = 0.0
+        self._evict = False  # 被他猫挤顶，下一 tick 摔落
 
     def _roll(self):
         return self.rng.random() if self.rng is not None else 0.5
@@ -37,6 +42,14 @@ class PoleClimber:
         self.timer += 1
         b = self.body
         c1 = b.chunk1
+
+        # 被下方上来挤顶的猫顶落
+        if self._evict:
+            self._evict = False
+            if self.phase in ("climb", "tip"):
+                lean = (ARC_R - 2.0) if self._roll() < 0.5 else -(ARC_R - 2.0)
+                self._fall(lean)
+                return True
 
         if self.phase == "approach":
             b.walk_to(self.pole.x)
@@ -49,6 +62,11 @@ class PoleClimber:
 
         if self.phase == "climb":
             self._drive_climb()
+            occ = self._tip_occupant(c1)
+            if occ is not None:
+                pcm = getattr(getattr(occ, "behavior", None), "poleclimb", None)
+                if pcm is not None:
+                    pcm.request_evict()  # 把顶上那只顶下来
             if c1.y <= self.pole.top_y + TIP_ENTER_PAD or self.timer > CLIMB_TIMEOUT:
                 self._enter_tip()
             return False
@@ -61,9 +79,33 @@ class PoleClimber:
 
         return False
 
+    def _tip_occupant(self, c1):
+        """同一根杆顶上是否有别的猫占着；仅当其 hip 已处顶部区域且我接近顶端。"""
+        if c1.y > self.pole.top_y + PUSH_EVICT_DIST:
+            return None
+        top = self.pole.top_y
+        for op in getattr(self.win, "pets", ()):
+            pcm = getattr(getattr(op, "behavior", None), "poleclimb", None)
+            if pcm is None or pcm is self or pcm.pole is not self.pole:
+                continue
+            if pcm.phase != "tip":  # 只顶真正站定的那只
+                continue
+            ob = getattr(op, "body", None)
+            if ob is None:
+                continue
+            if abs(getattr(ob, "pole_x", 1e9) - self.pole.x) > POLE_SAME_EPS:
+                continue
+            if ob.chunk1.y <= top + TIP_OCCUPY_PAD:
+                return op
+        return None
+
+    def request_evict(self):
+        """由下方挤顶的猫调用，请求把本猫从杆顶顶落。"""
+        self._evict = True
+
     def _grab(self):
         b = self.body
-        c0, c1 = b.chunk0, b.chunk1
+        c0 = b.chunk0
         b.stop_walk()
         b.standing = True
         b.on_pole = True
@@ -81,9 +123,9 @@ class PoleClimber:
         c0.x = (c0.x + tx) / 2.0
         c1.x = (c1.x * 7.0 + tx) / 8.0
         c0.vy *= 0.5
-        c0.vy += -1.0 * b.stats.pole_fac    # 爬升推进×种族因子，抗重力项不缩放
+        c0.vy += -1.0 * b.stats.pole_fac  # 爬升推进×种族因子，抗重力项不缩放
         c0.vy += -(1.0 + GRAV)
-        c1.vy += (1.0 - GRAV)
+        c1.vy += 1.0 - GRAV
 
     def _enter_tip(self):
         b = self.body
@@ -135,9 +177,10 @@ class PoleClimber:
             self._jump_down()
             return True
         # 失衡摔落
-        if ((self.disbalance >= tuning.TIP_FALL_DISBALANCE
-             and self._roll() < tuning.TIP_FALL_PROB)
-                or self.tip_ticks > TIP_TIMEOUT):
+        if (
+            self.disbalance >= tuning.TIP_FALL_DISBALANCE
+            and self._roll() < tuning.TIP_FALL_PROB
+        ) or self.tip_ticks > TIP_TIMEOUT:
             self._fall(lean)
             return True
         return False
