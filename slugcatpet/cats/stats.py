@@ -1,4 +1,5 @@
 """SlugStats：每种族的移动因子/体重/饱食/动作冲量数值。DEFAULT_STATS=现值基线，各猫 replace 只写差异。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -7,10 +8,11 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class SlugStats:
     """一种族的静态数值：移动因子 + 动作冲量；y↓。"""
+
     # 移动因子
-    runspeed_fac: float = 1.0        # 不乘加速度
+    runspeed_fac: float = 1.0  # 不乘加速度
     pole_fac: float = 1.0
-    weight_fac: float = 1.0          # 不进跳跃公式
+    weight_fac: float = 1.0  # 不进跳跃公式
     # 隧道爬速因子留白：无对应玩法，趴行恒 2.5 不分种族
 
     # 饱食：上限/冬眠阈（整数格）
@@ -50,6 +52,10 @@ class SlugStats:
     belly_jump_cancel_window: int = 12
     # 同向跑 tick 数>此值才可起刹
     skid_init_thresh: int = 10
+    # 让路跳持跳帧数（越大跳越高；溪流调小防突兀）
+    makeway_hop_hold: int = 8
+    # 让路跳横向力度（陆地值，对应 tuning.MAKEWAY_EVADE_VX；溪流另设更小值）
+    makeway_evade_vx: float = 2.8
 
     # 竖杆跳 beam jump：无持跳续力，y↓取负
     pole_jump_head_vx: float = 6.0
@@ -59,16 +65,18 @@ class SlugStats:
 
     # 水/游泳
     buoyancy: float = 0.95
-    lungs_fac: float = 1.0            # 耗气倍率
+    lungs_fac: float = 1.0  # 耗气倍率
     swim_boost_force: float = 3.0
     swim_boost_cost: float = 0.2
-    swim_boost_cd: int = 20           # tick
+    swim_boost_cd: int = 20  # tick
     swim_surface_speed: float = 2.7
     drown_threshold: float = 1.0 / 3.0  # 缺氧挣扎/自救阈
     swim_force_fac: float = 1.0
-    bubble_fac: float = 1.0           # 吐泡概率倍率（桌宠原创）
-    is_rivulet: bool = False          # 溪流游泳特判（潜泳冲力/鳃免溺等）
-    is_artificer: bool = False        # 工匠水下耗尽气溺爆而死
+    bubble_fac: float = 1.0  # 吐泡概率倍率（桌宠原创）
+    is_rivulet: bool = False  # 溪流游泳特判（潜泳冲力/鳃免溺等）
+    is_artificer: bool = False  # 工匠水下耗尽气溺爆而死
+    no_dive: bool = False  # True=绝不主动潜水（憋气极短族，如工匠）
+    swim_leap_fac: float = 1.0  # 水中跃起让位力度倍率（溪流偏小，防突兀）
 
     # 0-based，HUD 显示 +1；None=用全局 KARMA_MAX
     karma_cap: int | None = None
