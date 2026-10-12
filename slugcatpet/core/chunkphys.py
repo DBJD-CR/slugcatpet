@@ -1,22 +1,23 @@
 """物理内核：显式速度质点 + 连接约束 + 轴对齐碰撞。坐标系 y↓，常量换算见 core.units。"""
+
 from __future__ import annotations
 import math
 
 from .units import K_IMP, K_VEL, clampf, damp60, lerp
 
-RAD0 = 9.0            # chest
-RAD1 = 8.0            # hips
+RAD0 = 9.0  # chest
+RAD1 = 8.0  # hips
 MASS = 0.35
 DIST_STAND = 17.0
 DIST_CRAWL = 17.0
 
-GRAVITY = 0.9 * K_IMP            # y↓
+GRAVITY = 0.9 * K_IMP  # y↓
 AIR_FRICTION = damp60(0.999)
 BOUNCE = 0.1
 WEIGHT_SYMMETRY = 0.5
 ELASTICITY = 1.0
 SURFACE_FRICTION = 0.5
-MAX_STRETCH = 1.5    # pinned 端硬上限，rest×此值
+MAX_STRETCH = 1.5  # pinned 端硬上限，rest×此值
 
 STOP_THRESH = (1.0 + 9.0 * (1.0 - BOUNCE)) * K_VEL
 TANGENTIAL = min(max(SURFACE_FRICTION * 2.0, 0.0), 1.0)
@@ -25,13 +26,59 @@ IMPACT_THRESHOLD = 1.0 * K_VEL
 IMPACT_SHAKE_MOMENTUM = 7.0 * K_VEL
 IMPACT_STRENGTH_KNEE = 30.0 * K_VEL
 
+# 坠落伤害：阈值随世界高度自适应（v_nat=sqrt(2·G·HL) 即顶端自由落体落地速度），
+# 保证自然掉落永不触发，仅拖拽甩砸等人工超速才触发。
+IMPACT_STUN_FALL = 1.80  # 眩晕阈 = v_nat×此值
+IMPACT_DEATH_FALL = 4.00  # 致死阈 = v_nat×此值
+IMPACT_STUN_FLOOR = 30.0  # 小屏（矮世界）下限，防阈值过低
+IMPACT_DEATH_FLOOR = 40.0
 
-def apply_water(obj, water_y, buoyancy: float, water_friction, room_gravity: float,
-                air_friction: float, immunity: float = 0.0) -> None:
+# 甩晕：连续同向角速度过高判晕。有符号低通能区分"真旋转"与"来回摇头"。
+SPIN_STUN_DEG_PER_S = 900.0  # 角速度阈（度/秒）
+SPIN_STUN_TICKS = 120  # 连续超阈帧数 = 3 秒@40Hz
+SPIN_STUN_DURATION = 200  # 甩晕后昏迷时长（tick）= 5 秒@40Hz
+
+
+def vnat_for_height(HL: float, room_gravity: float = 1.0) -> float:
+    """顶端自由落体落地速度 v=sqrt(2·G·HL)（无重力时退回 1 倍重力）。"""
+    g = GRAVITY * (room_gravity if room_gravity > 1e-6 else 1.0)
+    return math.sqrt(2.0 * g * max(0.0, HL))
+
+
+def compute_impact_scale(body) -> float:
+    """算 cat 本 tick 的撞击速度放大系数，并写回两 chunk（单写者）。
+
+    拖拽中 chunk 速度被护栏钳到 TETHER_VEL_CAP，此处用未钳制的真实光标速度
+    之比补回；非拖拽一律 1.0（自然掉落最高仅 ~v_nat，本就低于伤害阈）。
+    """
+    c0, c1 = body.chunk0, body.chunk1
+    drag = getattr(body, "_drag_speed", 0.0)
+    # 仅"拖拽中且该 chunk 被钉住"才补速；松手后 _drag_speed 已清零，绝不误判
+    if drag > 0.0 and (c0.pinned or c1.pinned):
+        ch = c0 if c0.pinned else c1
+        sp = math.hypot(ch.vx, ch.vy)
+        scale = max(1.0, drag / sp) if sp > 0.5 else 1.0
+    else:
+        scale = 1.0
+    scale = min(scale, 6.0)  # 上限防爆表抖动
+    c0._impact_scale = scale
+    c1._impact_scale = scale
+    return scale
+
+
+def apply_water(
+    obj,
+    water_y,
+    buoyancy: float,
+    water_friction,
+    room_gravity: float,
+    air_friction: float,
+    immunity: float = 0.0,
+) -> None:
     """水管线，重力后积分前调用。"""
     r = obj.rad
     sub = 0.0
-    if water_y is not None and obj.y + r > water_y:      # 最低点入水
+    if water_y is not None and obj.y + r > water_y:  # 最低点入水
         sub = (obj.y + r - water_y) / (2.0 * r)
         if sub > 1.0:
             sub = 1.0
@@ -40,23 +87,42 @@ def apply_water(obj, water_y, buoyancy: float, water_friction, room_gravity: flo
         obj.vy *= air_friction
         return
     if obj.vx > -obj.vy * 5.0 and abs(obj.vx) > 10.0 and obj.vy > 0.0 and sub < 0.5:
-        obj.vy *= -0.5                                    # 打水漂
+        obj.vy *= -0.5  # 打水漂
         obj.vx *= 0.75
         return
-    obj.vy -= buoyancy * room_gravity * sub              # 浮力，y↓取负
+    obj.vy -= buoyancy * room_gravity * sub  # 浮力，y↓取负
     wf = water_friction if water_friction is not None else air_friction
     spd = math.hypot(obj.vx, obj.vy)
     inner = lerp(wf * immunity, wf, (1.0 / max(1.0, spd - 10.0)) ** 0.5)
-    k = lerp(air_friction, inner, sub)                   # 空气↔水阻插值
+    k = lerp(air_friction, inner, sub)  # 空气↔水阻插值
     obj.vx *= k
     obj.vy *= k
 
 
 class BodyChunk:
     """BodyChunk：显式速度质点 + 圆-墙碰撞。坐标 y 向下。"""
-    __slots__ = ("x", "y", "vx", "vy", "last_x", "last_y", "last_last_x", "last_last_y",
-                 "rad", "mass", "index", "cx", "cy", "lcx", "lcy", "pinned",
-                 "collide_with_objects")
+
+    __slots__ = (
+        "x",
+        "y",
+        "vx",
+        "vy",
+        "last_x",
+        "last_y",
+        "last_last_x",
+        "last_last_y",
+        "rad",
+        "mass",
+        "index",
+        "cx",
+        "cy",
+        "lcx",
+        "lcy",
+        "pinned",
+        "collide_with_objects",
+        "_impact_scale",
+        "owner_body",
+    )
 
     def __init__(self, index: int, x: float, y: float, rad: float, mass: float):
         self.index = index
@@ -65,19 +131,30 @@ class BodyChunk:
         self.vx = self.vy = 0.0
         self.rad = rad
         self.mass = mass
-        self.cx = self.cy = 0      # 本帧接触 (±1/0)
-        self.lcx = self.lcy = 0    # 上帧接触，边沿检测用
-        self.pinned = False        # 外部定位，不积分不撞
-        self.collide_with_objects = True   # 通用 chunk 碰撞开关
+        self.cx = self.cy = 0  # 本帧接触 (±1/0)
+        self.lcx = self.lcy = 0  # 上帧接触，边沿检测用
+        self.pinned = False  # 外部定位，不积分不撞
+        self.collide_with_objects = True  # 通用 chunk 碰撞开关
+        self._impact_scale = 1.0  # 撞击速度放大系数（拖拽补速）
+        self.owner_body = None  # 反查宿主猫体（撞击回调用）
 
     @property
     def on_floor(self) -> bool:
-        return self.cy == 1     # y↓，+1=着地
+        return self.cy == 1  # y↓，+1=着地
 
-    def update(self, W: float, H: float, gravity: float = GRAVITY,
-               air_friction: float = AIR_FRICTION, impact=None,
-               room_gravity: float = 1.0, water_y=None, buoyancy: float = 1.0,
-               water_friction=None, water_immunity: float = 0.0) -> None:
+    def update(
+        self,
+        W: float,
+        H: float,
+        gravity: float = GRAVITY,
+        air_friction: float = AIR_FRICTION,
+        impact=None,
+        room_gravity: float = 1.0,
+        water_y=None,
+        buoyancy: float = 1.0,
+        water_friction=None,
+        water_immunity: float = 0.0,
+    ) -> None:
         """推进一帧。"""
         if self.vx != self.vx:
             self.vx = 0.0
@@ -91,7 +168,15 @@ class BodyChunk:
             self.cx = self.cy = 0
             return
         self.vy += gravity * room_gravity
-        apply_water(self, water_y, buoyancy, water_friction, room_gravity, air_friction, water_immunity)
+        apply_water(
+            self,
+            water_y,
+            buoyancy,
+            water_friction,
+            room_gravity,
+            air_friction,
+            water_immunity,
+        )
         self.last_last_x, self.last_last_y = self.last_x, self.last_y
         self.last_x, self.last_y = self.x, self.y
         self.x += self.vx
@@ -157,22 +242,33 @@ class BodyChunk:
             self.vy *= TANGENTIAL
 
 
-def _fire_impact(c: BodyChunk, direction, speed: float, first_contact: bool, impact) -> None:
+def _fire_impact(
+    c: BodyChunk, direction, speed: float, first_contact: bool, impact
+) -> None:
     """地形撞击：首次接触边沿 + 动量超阈值时触发。"""
     if not first_contact:
         return
+    scale = getattr(c, "_impact_scale", 1.0)
+    if scale > 1.0:
+        speed *= scale  # 拖拽期 chunk 速度被护栏钳制，用残留缩放补回真实撞速
     momentum = speed * c.mass
-    if momentum <= IMPACT_SHAKE_MOMENTUM:
-        return
+    if scale <= 1.0 and momentum <= IMPACT_SHAKE_MOMENTUM:
+        return  # 自然撞击按动量门抑制抖动；拖拽撞击强制放行供伤害裁定
     strength = max((momentum - IMPACT_STRENGTH_KNEE) / 50.0, 0.0)
     ix = direction[0] * momentum * 0.1
     iy = direction[1] * momentum * 0.1
     impact(c, direction, speed, strength, ix, iy)
 
 
-def solve_conn(a: BodyChunk, b: BodyChunk, rest: float = DIST_STAND,
-               wsym: float = WEIGHT_SYMMETRY, elasticity: float = ELASTICITY,
-               ctype: str = "Normal", max_stretch: float = MAX_STRETCH) -> None:
+def solve_conn(
+    a: BodyChunk,
+    b: BodyChunk,
+    rest: float = DIST_STAND,
+    wsym: float = WEIGHT_SYMMETRY,
+    elasticity: float = ELASTICITY,
+    ctype: str = "Normal",
+    max_stretch: float = MAX_STRETCH,
+) -> None:
     """单遍半隐式约束求解，pinned 端不被推走。"""
     dx, dy = b.x - a.x, b.y - a.y
     d = math.hypot(dx, dy) or 1e-6
@@ -187,17 +283,17 @@ def solve_conn(a: BodyChunk, b: BodyChunk, rest: float = DIST_STAND,
     ap, bp = a.pinned, b.pinned
     if ap and bp:
         return
-    if ap:                                  # a 钉死，b 吃 (1-wsym)
+    if ap:  # a 钉死，b 吃 (1-wsym)
         b.x += ux * cb
         b.y += uy * cb
         b.vx += ux * cb * K_IMP
         b.vy += uy * cb * K_IMP
-    elif bp:                                # b 钉死，a 吃 wsym
+    elif bp:  # b 钉死，a 吃 wsym
         a.x -= ux * ca
         a.y -= uy * ca
         a.vx -= ux * ca * K_IMP
         a.vy -= uy * ca * K_IMP
-    else:                                   # 都自由，按 wsym 分
+    else:  # 都自由，按 wsym 分
         a.x -= ux * ca
         a.y -= uy * ca
         a.vx -= ux * ca * K_IMP
@@ -214,10 +310,10 @@ def solve_conn(a: BodyChunk, b: BodyChunk, rest: float = DIST_STAND,
         d = math.hypot(dx, dy)
         if d > limit:
             ux, uy = dx / d, dy / d
-            if ap:                          # a 钉死，拉 b 到上限
+            if ap:  # a 钉死，拉 b 到上限
                 b.x = a.x + ux * limit
                 b.y = a.y + uy * limit
-            else:                           # b 钉死，拉 a
+            else:  # b 钉死，拉 a
                 a.x = b.x - ux * limit
                 a.y = b.y - uy * limit
 
@@ -225,8 +321,8 @@ def solve_conn(a: BodyChunk, b: BodyChunk, rest: float = DIST_STAND,
 def aabb_wall_collide(obj, WL, HL, impact=None):
     """圆-墙 4 面碰撞，竖直优先。"""
     r = obj.rad
-    tang = clampf(obj.surface_friction * 2.0, 0.0, 1.0)   # 切向摩擦
-    stop = 1.0 + 9.0 * (1.0 - obj.bounce)                 # 低弹性→高阈值，撞墙即停
+    tang = clampf(obj.surface_friction * 2.0, 0.0, 1.0)  # 切向摩擦
+    stop = 1.0 + 9.0 * (1.0 - obj.bounce)  # 低弹性→高阈值，撞墙即停
     has_ceil = hasattr(obj, "_contact_ceil")
     prev_floor, prev_x = obj._contact_floor, obj._contact_x
     prev_ceil = obj._contact_ceil if has_ceil else False
@@ -287,14 +383,14 @@ def collide_objects(entities) -> None:
         n = len(objs)
         if n < 2:
             continue
-        groups = [o.collision_chunks() for o in objs]   # 每实体取一次，含本 tick 豁免
+        groups = [o.collision_chunks() for o in objs]  # 每实体取一次，含本 tick 豁免
         for i in range(n):
             for j in range(i + 1, n):
                 _collide_pair(objs[i], objs[j], groups[i], groups[j])
 
 
 def _collide_pair(a, b, a_chunks, b_chunks) -> None:
-    """一对同层实体的 chunk 圆重叠推开。"""
+    """一对同层实体的 chunk 圆重叠推开；pinned 端不被推动/冲量（同 solve_conn）。"""
     for ca in a_chunks:
         if not ca.collide_with_objects:
             continue
@@ -306,16 +402,35 @@ def _collide_pair(a, b, a_chunks, b_chunks) -> None:
             dist = math.hypot(dx, dy)
             if dist >= rad_sum:
                 continue
-            if dist < 1e-9:                     # 完全重合，退化取 (0,1)
+            # 世界物体（Fruit/Stone 等）无 pinned 属性，视为自由端
+            ap, bp = getattr(ca, "pinned", False), getattr(cb, "pinned", False)
+            if ap and bp:
+                continue  # 两端都钉死（如在杆顶），互不推动
+            if dist < 1e-9:  # 完全重合，退化取 (0,1)
                 ux, uy = 0.0, 1.0
             else:
                 ux, uy = dx / dist, dy / dist
-            pen = rad_sum - dist                # 穿透深度
+            pen = rad_sum - dist  # 穿透深度
             mr = cb.mass / (ca.mass + cb.mass)  # 对方质量占比，轻的位移多
-            ax, ay = ux * pen * mr, uy * pen * mr
-            bx, by = ux * pen * (1.0 - mr), uy * pen * (1.0 - mr)
-            ca.x -= ax; ca.y -= ay; ca.vx -= ax; ca.vy -= ay
-            cb.x += bx; cb.y += by; cb.vx += bx; cb.vy += by
-            if ca.x == cb.x:                    # 同 x 时加确定性微扰
-                ca.vx += 1e-4
-                cb.vx -= 1e-4
+            # 钉死端不吃位移，自由端补足；两端皆自由才按质量分摊
+            if ap:
+                wa, wb = 0.0, 1.0
+            elif bp:
+                wa, wb = 1.0, 0.0
+            else:
+                wa, wb = mr, 1.0 - mr
+            ax, ay = ux * pen * wa, uy * pen * wa
+            bx, by = ux * pen * wb, uy * pen * wb
+            ca.x -= ax
+            ca.y -= ay
+            ca.vx -= ax
+            ca.vy -= ay
+            cb.x += bx
+            cb.y += by
+            cb.vx += bx
+            cb.vy += by
+            if ca.x == cb.x:  # 同 x 时加确定性微扰
+                if not ap:
+                    ca.vx += 1e-4
+                if not bp:
+                    cb.vx -= 1e-4
