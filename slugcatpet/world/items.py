@@ -1,22 +1,41 @@
 """Fruit and stone interaction helpers for ``PetWindow``."""
+
 from __future__ import annotations
 
 import math
 import random
 
-from PySide6.QtCore import QPointF, Qt
-from PySide6.QtGui import (QBrush, QColor, QPainter, QPainterPath, QPen,
-                           QPolygonF, QRadialGradient)
+from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPolygonF,
+    QRadialGradient,
+)
 
 from ..core.units import clampf, inv_lerp, lerp
 from ..core.gfxmath import _hsl2rgb
+from ..i18n import t
 from ..control.hotkey import HK_PLACE_ESC, VK_ESCAPE
 from .fruit import PLACE_HANGING_FRAC, make_fruit
 from ..rendering.graphics import _ang_from_up
-from ..rendering.primitives import blit, draw_fruit, draw_rope, draw_stone, draw_stone_trail
+from ..rendering.primitives import (
+    blit,
+    draw_fruit,
+    draw_rope,
+    draw_stone,
+    draw_stone_trail,
+)
 from .enums import ItemState
-from .slimemold import (SlimeMold, _dirvec as _slime_dir, _lerp_map as _slime_lerp_map,
-                        TENDRIL_JAG_K)
+from .slimemold import (
+    SlimeMold,
+    _dirvec as _slime_dir,
+    _lerp_map as _slime_lerp_map,
+    TENDRIL_JAG_K,
+)
 from .stone import Stone
 from .batfly import BatFly
 from .pole import POLE_RAD, MIN_LENGTH as POLE_MIN_LENGTH, TOP_MARGIN as POLE_TOP_MARGIN
@@ -50,6 +69,7 @@ STONE_TRAIL_HALFW = 3.0
 STONE_TRAIL_ALPHA = 90
 CURSOR_STUN_PAD = 8.0
 CURSOR_STUN_LOCK = 80
+CURSOR_KNOCK_SPEED = 26.0  # 光标受击弹开初速（逻辑 px/tick）
 # 黏菌颜色
 SLIME_HUE_LIGHT = 0.07
 SLIME_HUE_DARK = 0.05
@@ -58,7 +78,7 @@ SLIME_OUTLINE_L = 0.25
 SLIME_DARK_LO = 0.3
 SLIME_DARK_HI = 0.7
 SLIME_DRAW_SCALE = 1.0
-SLIME_LIGHT_SCALE = 55.0 / 140.0    # 下调防过曝
+SLIME_LIGHT_SCALE = 55.0 / 140.0  # 下调防过曝
 SLIME_BLOOM_SCALE = 12.0 / 30.0
 SLIME_RESTICK_PAD = 50.0
 # 触须锯齿单位圆表
@@ -95,7 +115,7 @@ _BATFLY_WING_C = QColor(*BATFLY_WING_COLOR)
 _BATFLY_EYE_C = QColor(*BATFLY_EYE_COLOR)
 
 
-def _slime_body_rgb(dm, l):
+def _slime_body_rgb(dm, l):  # noqa: E741
     """按 darkMode 算橙系 RGB。"""
     hue = lerp(SLIME_HUE_LIGHT, SLIME_HUE_DARK, dm)
     r, g, b = _hsl2rgb(hue, 1.0, l)
@@ -120,20 +140,22 @@ def _slime_colors(dm):
 def _slerp2(ax, ay, bx, by, t):
     """两单位向量球面插值。"""
     dot = clampf(ax * bx + ay * by, -1.0, 1.0)
-    if dot > 0.9995:                                   # 近平行退化
+    if dot > 0.9995:  # 近平行退化
         return (ax + (bx - ax) * t, ay + (by - ay) * t)
     theta = math.acos(dot)
     s = math.sin(theta)
-    return (ax * math.sin((1.0 - t) * theta) / s + bx * math.sin(t * theta) / s,
-            ay * math.sin((1.0 - t) * theta) / s + by * math.sin(t * theta) / s)
+    return (
+        ax * math.sin((1.0 - t) * theta) / s + bx * math.sin(t * theta) / s,
+        ay * math.sin((1.0 - t) * theta) / s + by * math.sin(t * theta) / s,
+    )
 
 
 class ItemInteractionMixin:
-    MAX_FRUITS = 3
-    MAX_STONES = 3
-    MAX_SLIMEMOLDS = 3
-    MAX_BATFLIES = 3
-    MAX_POLES = 2              # 每种各上限
+    MAX_FRUITS = 12
+    MAX_STONES = 12
+    MAX_SLIMEMOLDS = 12
+    MAX_BATFLIES = 12
+    MAX_POLES = 6  # 每种各上限
     _FRUIT_GRAB_PAD = 7.0
     _FRUIT_FLING_CAP = 14.0
     _STONE_GRAB_PAD = 7.0
@@ -142,6 +164,8 @@ class ItemInteractionMixin:
     _SLIME_FLING_CAP = 14.0
     _BATFLY_GRAB_PAD = 7.0
     _BATFLY_FLING_CAP = 14.0
+    _REMOVE_GRAB_PAD = 7.0
+    _REMOVE_MARK_RAD = 11.0
 
     def can_place_fruit(self) -> bool:
         return len(self.fruits) < self.MAX_FRUITS
@@ -153,7 +177,7 @@ class ItemInteractionMixin:
         self._fruit_seed += 1
         self.fruits.append(f)
         self.world_version += 1
-        self._exit_place_mode()
+        self._after_place(self.can_place_fruit())
         return f
 
     def clear_fruits(self):
@@ -242,7 +266,7 @@ class ItemInteractionMixin:
         self._stone_seed += 1
         self.stones.append(s)
         self.world_version += 1
-        self._exit_place_mode()
+        self._after_place(self.can_place_stone())
         return s
 
     def clear_stones(self):
@@ -361,8 +385,24 @@ class ItemInteractionMixin:
         for s in self.stones:
             if not s.thrown_by_saint or s.state != ItemState.FREE:
                 continue
-            if math.hypot(s.x - cx, s.y - cy) < s.rad + CURSOR_STUN_PAD:
-                self.start_cursor_hijack(cx, cy, lock_ticks=CURSOR_STUN_LOCK)
+            # 用本 tick 位移线段判命中，防高速石头一帧直穿光标漏检
+            ax, ay, bx, by = s.last_x, s.last_y, s.x, s.y
+            dx, dy = bx - ax, by - ay
+            l2 = dx * dx + dy * dy
+            if l2 > 1e-9:
+                u = ((cx - ax) * dx + (cy - ay) * dy) / l2
+                u = 0.0 if u < 0.0 else (1.0 if u > 1.0 else u)
+                px, py = ax + dx * u, ay + dy * u
+            else:
+                px, py = bx, by
+            if math.hypot(cx - px, cy - py) < s.rad + CURSOR_STUN_PAD:
+                # 沿石速归一化给固定弹开初速，略上挑更像被砸飞
+                sp = math.hypot(s.vx, s.vy) or 1.0
+                k = CURSOR_KNOCK_SPEED / sp
+                knock = (s.vx * k, s.vy * k - 6.0)
+                self.start_cursor_hijack(
+                    cx, cy, lock_ticks=CURSOR_STUN_LOCK, knock_v=knock
+                )
                 s.deflect(self._stun_rng)
                 s.thrown_by_saint = False
                 break
@@ -373,6 +413,7 @@ class ItemInteractionMixin:
 
     def place_pole(self, lx, ly, place_kind):
         from .pole import Pole, VERTICAL, HORIZONTAL, MIN_LENGTH, TOP_MARGIN
+
         kind = VERTICAL if place_kind == "vpole" else HORIZONTAL
         if not self.can_place_pole(kind):
             return None
@@ -389,12 +430,13 @@ class ItemInteractionMixin:
         self.poles.append(pl)
         self.world_version += 1
         self.geometry_version += 1
-        self._exit_place_mode()
+        self._after_place(self.can_place_pole(kind))
         self.update()
         return pl
 
     def clear_poles(self):
         from .enums import ItemState as _IS
+
         for pl in self.poles:
             pl.state = _IS.GONE
         if self.poles:
@@ -428,11 +470,17 @@ class ItemInteractionMixin:
         return True
 
     def _draw_poles(self, p):
-        p.save()
         for pl in self.poles:
-            if getattr(pl, "mimic", None) is not None:
-                continue
-            self._draw_pole_rod(p, pl.ax, pl.ay, pl.bx, pl.by, POLE_RAD)
+            self._draw_one_pole(p, pl)
+
+    def _draw_one_pole(self, p, pl, opacity=1.0):
+        """单根杆子绘制，正式/高亮预览共用。"""
+        if getattr(pl, "mimic", None) is not None:
+            return
+        p.save()
+        if opacity < 1.0:
+            p.setOpacity(opacity)
+        self._draw_pole_rod(p, pl.ax, pl.ay, pl.bx, pl.by, POLE_RAD)
         p.restore()
 
     def _draw_pole_rod(self, p, ax, ay, bx, by, rad):
@@ -471,7 +519,7 @@ class ItemInteractionMixin:
         """点击点 → 最近边算锚点/灯泡位置/边名。"""
         d = {"top": ly, "bottom": self._HL - ly, "left": lx, "right": self._WL - lx}
         edge = min(d, key=d.get)
-        perp = d[edge]                                      # 垂距
+        perp = d[edge]  # 垂距
         off = perp * math.tan(math.radians(getattr(self, "_lamp_tilt", 0.0)))
         if edge == "top":
             ax, ay = clampf(lx + off, 0.0, self._WL), 0.0
@@ -487,8 +535,14 @@ class ItemInteractionMixin:
         ay += vy / vlen * LAMP_STICK_OUTSET
         return ax, ay, lx, ly, edge
 
+    def can_place_lamp(self) -> bool:
+        return self.lamp is None
+
     def place_lamp(self, lx, ly):
         from .lamp import Lamp
+
+        # 每次落点重掷倾角，避免连续放置时多灯姿态雷同
+        self._lamp_tilt = random.uniform(-LAMP_TILT_MAX_DEG, LAMP_TILT_MAX_DEG)
         ax, ay, bx, by, edge = self._lamp_geom(lx, ly)
         if self.lamp is not None:
             self.lamp.state = ItemState.GONE
@@ -496,7 +550,7 @@ class ItemInteractionMixin:
         self._lamp_seed += 1
         self.world_version += 1
         self.geometry_version += 1
-        self._exit_place_mode()
+        self._after_place(self.can_place_lamp())
         self.update()
         return self.lamp
 
@@ -530,14 +584,25 @@ class ItemInteractionMixin:
             sx, sy = ax + ux * 5.0, ay + uy * 5.0
             tx, ty = bx + ux * 25.0, by + uy * 25.0
             n = 8
-            pts = [(sx + (tx - sx) * i / (n - 1), sy + (ty - sy) * i / (n - 1))
-                   for i in range(n)]
+            pts = [
+                (sx + (tx - sx) * i / (n - 1), sy + (ty - sy) * i / (n - 1))
+                for i in range(n)
+            ]
             widths = [2.0 * (root_w + (0.5 - root_w) * (i / (n - 1))) for i in range(n)]
             draw_rope(p, pts, widths, color=LAMP_STICK_COLOR)
             bulb_rot = math.degrees(math.atan2(ax - bx, by - ay))
-        draw_fruit(p, self.atlas, bx, by, bulb_rot, 3,
-                   flesh_color=LAMP_BULB_FLESH, outline_color=LAMP_BULB_OUTLINE,
-                   scalex=0.8, scaley=0.9)
+        draw_fruit(
+            p,
+            self.atlas,
+            bx,
+            by,
+            bulb_rot,
+            3,
+            flesh_color=LAMP_BULB_FLESH,
+            outline_color=LAMP_BULB_OUTLINE,
+            scalex=0.8,
+            scaley=0.9,
+        )
         if glow_radius and glow_radius > 1.0:
             grad = QRadialGradient(QPointF(bx, by), glow_radius)
             grad.setColorAt(0.0, QColor(*LAMP_GLOW_COLOR, LAMP_GLOW_ALPHA))
@@ -552,8 +617,15 @@ class ItemInteractionMixin:
         lamp = self.lamp
         if lamp is None:
             return
-        self._draw_lamp_shape(p, lamp.anchor_x, lamp.anchor_y, lamp.bulb_x, lamp.bulb_y,
-                              1.0, glow_radius=lamp.glow_radius())
+        self._draw_lamp_shape(
+            p,
+            lamp.anchor_x,
+            lamp.anchor_y,
+            lamp.bulb_x,
+            lamp.bulb_y,
+            1.0,
+            glow_radius=lamp.glow_radius(),
+        )
 
     def _draw_lamp_hint(self, p):
         cur = self.cursor_logical()
@@ -582,6 +654,7 @@ class ItemInteractionMixin:
         else:
             sx, sy, nx, ny = self._WL, clampf(ly, 0.0, self._HL), -1.0, 0.0
         from .slimemold import STUCK_GAP
+
         return sx, sy, sx + nx * STUCK_GAP, sy + ny * STUCK_GAP
 
     def place_slimemold(self, lx, ly):
@@ -593,14 +666,14 @@ class ItemInteractionMixin:
         self._slimemold_seed += 1
         self.slimemolds.append(m)
         self.world_version += 1
-        self._exit_place_mode()
+        self._after_place(self.can_place_slimemold())
         self.update()
         return m
 
     def clear_slimemolds(self):
         for m in self.slimemolds:
             for pet in self.pets:
-                if m is pet.body.carried_fruit:      # 复用果子叼持槽
+                if m is pet.body.carried_fruit:  # 复用果子叼持槽
                     pet.body.release_fruit()
             m.state = ItemState.EATEN
         if self.slimemolds:
@@ -615,7 +688,9 @@ class ItemInteractionMixin:
             return False
         self._place_mode = True
         self._place_kind = "slimemold"
-        self._slime_preview = SlimeMold(0.0, 0.0, seed=self._slimemold_seed)   # 预览用真实实例
+        self._slime_preview = SlimeMold(
+            0.0, 0.0, seed=self._slimemold_seed
+        )  # 预览用真实实例
         self._begin_place_capture()
         return True
 
@@ -641,7 +716,7 @@ class ItemInteractionMixin:
         m.state = ItemState.MOUSE
         m.vx = m.vy = 0.0
         m.last_x, m.last_y = pos
-        m.x, m.y = pos                       # 触须由 step 弹簧跟随
+        m.x, m.y = pos  # 触须由 step 弹簧跟随
         self._dragged_slimemold = m
         self._slime_drag_last = tuple(pos)
         return True
@@ -661,7 +736,7 @@ class ItemInteractionMixin:
         if self._slime_drag_last is not None:
             m.vx = cur[0] - self._slime_drag_last[0]
             m.vy = cur[1] - self._slime_drag_last[1]
-        m.x, m.y = cur                        # 触须由 step 弹簧跟随
+        m.x, m.y = cur  # 触须由 step 弹簧跟随
         self._slime_drag_last = tuple(cur)
 
     def _end_slimemold_drag(self):
@@ -688,8 +763,13 @@ class ItemInteractionMixin:
         return True
 
     def _draw_slimemolds(self, p):
-        dm = clampf(inv_lerp(SLIME_DARK_LO, SLIME_DARK_HI,
-                             getattr(self, "cold_cycle_prog", 0.0)), 0.0, 1.0)
+        dm = clampf(
+            inv_lerp(
+                SLIME_DARK_LO, SLIME_DARK_HI, getattr(self, "cold_cycle_prog", 0.0)
+            ),
+            0.0,
+            1.0,
+        )
         for m in self.slimemolds:
             self._draw_one_slimemold(p, m, dm)
 
@@ -700,12 +780,22 @@ class ItemInteractionMixin:
         body, outline, glow = _slime_colors(dm)
         x = m.last_x + (m.x - m.last_x) * ts
         y = m.last_y + (m.y - m.last_y) * ts
-        vx, vy = _slerp2(m.last_rotation[0], m.last_rotation[1],
-                         m.rotation[0], m.rotation[1], ts)
+        vx, vy = _slerp2(
+            m.last_rotation[0], m.last_rotation[1], m.rotation[0], m.rotation[1], ts
+        )
         rot_deg = _ang_from_up(vx, vy) + 180.0
-        draw_fruit(p, atlas, x, y, rot_deg, m.bites,
-                   flesh_color=body, outline_color=outline,
-                   scalex=SLIME_DRAW_SCALE, scaley=SLIME_DRAW_SCALE * 0.85)
+        draw_fruit(
+            p,
+            atlas,
+            x,
+            y,
+            rot_deg,
+            m.bites,
+            flesh_color=body,
+            outline_color=outline,
+            scalex=SLIME_DRAW_SCALE,
+            scaley=SLIME_DRAW_SCALE * 0.85,
+        )
         # EATEN 外都画触须
         if m.state != ItemState.EATEN:
             self._draw_slime_tendrils(p, m, body)
@@ -713,21 +803,29 @@ class ItemInteractionMixin:
         hox = (-2.0 * (1.0 - dm) + vx * (1.0 + dm)) * SLIME_DRAW_SCALE
         hoy = (-2.0 * (1.0 - dm) + vy * (1.0 + dm)) * SLIME_DRAW_SCALE
         hl_t = lerp(0.5, 0.2, dm)
-        hlc = (int(lerp(body[0], 255, hl_t)),
-               int(lerp(body[1], 255, hl_t)),
-               int(lerp(body[2], 255, hl_t)))
+        hlc = (
+            int(lerp(body[0], 255, hl_t)),
+            int(lerp(body[1], 255, hl_t)),
+            int(lerp(body[2], 255, hl_t)),
+        )
         hsx = _slime_lerp_map(m.bites, 3.0, 1.0, 0.25, 0.15) * SLIME_DRAW_SCALE
         hsy = _slime_lerp_map(m.bites, 3.0, 1.0, 0.30, 0.05) * SLIME_DRAW_SCALE
         if atlas.find_atlas("Circle20") is not None:
             blit(p, atlas, "Circle20", x + hox, y + hoy, rot_deg, hsx, hsy, hlc)
         else:
-            p.save(); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(*hlc))
-            p.translate(x + hox, y + hoy); p.rotate(rot_deg)
+            p.save()
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(*hlc))
+            p.translate(x + hox, y + hoy)
+            p.rotate(rot_deg)
             p.scale(hsx * 20.0, hsy * 20.0)
-            p.drawEllipse(QPointF(0.0, 0.0), 0.5, 0.5); p.restore()
+            p.drawEllipse(QPointF(0.0, 0.0), 0.5, 0.5)
+            p.restore()
         # 暗场发光
         if dm > 0.0:
-            light_r = _slime_lerp_map(m.bites, 3.0, 1.0, 140.0, 40.0) * SLIME_LIGHT_SCALE
+            light_r = (
+                _slime_lerp_map(m.bites, 3.0, 1.0, 140.0, 40.0) * SLIME_LIGHT_SCALE
+            )
             bloom_r = _slime_lerp_map(m.bites, 3.0, 1.0, 30.0, 10.0) * SLIME_BLOOM_SCALE
             p.save()
             p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
@@ -735,10 +833,15 @@ class ItemInteractionMixin:
             for gr, ga in ((light_r, 0.12 * dm), (bloom_r, 0.25 * dm)):
                 grad = QRadialGradient(QPointF(x, y), gr)
                 a = int(clampf(ga, 0.0, 1.0) * 255)
-                c0 = QColor(*glow); c0.setAlpha(a)
-                cm = QColor(*glow); cm.setAlpha(a)          # 0.35 前不淡出，更柔
-                c1 = QColor(*glow); c1.setAlpha(0)
-                grad.setColorAt(0.0, c0); grad.setColorAt(0.35, cm); grad.setColorAt(1.0, c1)
+                c0 = QColor(*glow)
+                c0.setAlpha(a)
+                cm = QColor(*glow)
+                cm.setAlpha(a)  # 0.35 前不淡出，更柔
+                c1 = QColor(*glow)
+                c1.setAlpha(0)
+                grad.setColorAt(0.0, c0)
+                grad.setColorAt(0.35, cm)
+                grad.setColorAt(1.0, c1)
                 p.setBrush(QBrush(grad))
                 p.drawEllipse(QPointF(x, y), gr, gr)
             p.restore()
@@ -749,10 +852,16 @@ class ItemInteractionMixin:
         T = m.tendrils
         n = len(T)
         polys = m._tendril_polys
-        if polys is None:    # 首绘建缓存
-            polys = [QPolygonF([QPointF(0.5 * jf[k] * _JAG_COS[k], 0.5 * jf[k] * _JAG_SIN[k])
-                                for k in range(TENDRIL_JAG_K)])
-                     for jf in m.tendril_jag]
+        if polys is None:  # 首绘建缓存
+            polys = [
+                QPolygonF(
+                    [
+                        QPointF(0.5 * jf[k] * _JAG_COS[k], 0.5 * jf[k] * _JAG_SIN[k])
+                        for k in range(TENDRIL_JAG_K)
+                    ]
+                )
+                for jf in m.tendril_jag
+            ]
             m._tendril_polys = polys
         bx = m.last_x + (m.x - m.last_x) * ts
         by = m.last_y + (m.y - m.last_y) * ts
@@ -760,10 +869,10 @@ class ItemInteractionMixin:
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(QColor(*body)))
-        for idx, t in enumerate(T):
-            tx = t[2] + (t[0] - t[2]) * ts
-            ty = t[3] + (t[1] - t[3]) * ts
-            link = int(t[6])
+        for idx, tg in enumerate(T):
+            tx = tg[2] + (tg[0] - tg[2]) * ts
+            ty = tg[3] + (tg[1] - tg[3]) * ts
+            link = int(tg[6])
             if link < 0 or link >= n:
                 ax, ay = bx, by
             else:
@@ -772,13 +881,13 @@ class ItemInteractionMixin:
                 ay = pt[3] + (pt[1] - pt[3]) * ts
             dist = math.hypot(ax - tx, ay - ty)
             length = dist + 3.0
-            width = lerp(4.0, 1.5, inv_lerp(0.0, t[7] * 3.5, dist) ** 2)
-            rot = _ang_from_up(ax - tx, ay - ty)             # 触须→锚点角
+            width = lerp(4.0, 1.5, inv_lerp(0.0, tg[7] * 3.5, dist) ** 2)
+            rot = _ang_from_up(ax - tx, ay - ty)  # 触须→锚点角
             p.save()
             p.translate(tx, ty)
             if rot:
                 p.rotate(rot)
-            p.translate(0.0, -0.45 * length)                 # anchorY=0.05
+            p.translate(0.0, -0.45 * length)  # anchorY=0.05
             p.scale(width, length)
             p.drawPolygon(polys[idx])
             p.restore()
@@ -796,15 +905,20 @@ class ItemInteractionMixin:
             return
         sx, sy, bx, by = self._slime_edge_anchor(cx, cy)
         m.x, m.y = bx, by
-        if m.stuck_pos is None:                  # 首帧钉锚
+        if m.stuck_pos is None:  # 首帧钉锚
             m.stick_to(sx, sy)
-        else:                                    # 后续弹簧跟随
+        else:  # 后续弹簧跟随
             m.stuck_pos = (sx, sy)
             ux, uy = _slime_dir(bx, by, sx, sy)
             m.rotation = (-ux, -uy)
-        m.step(self._WL, self._HL)               # 手动推进触须
-        dm = clampf(inv_lerp(SLIME_DARK_LO, SLIME_DARK_HI,
-                             getattr(self, "cold_cycle_prog", 0.0)), 0.0, 1.0)
+        m.step(self._WL, self._HL)  # 手动推进触须
+        dm = clampf(
+            inv_lerp(
+                SLIME_DARK_LO, SLIME_DARK_HI, getattr(self, "cold_cycle_prog", 0.0)
+            ),
+            0.0,
+            1.0,
+        )
         p.save()
         p.setOpacity(0.5)
         self._draw_one_slimemold(p, m, dm)
@@ -821,7 +935,7 @@ class ItemInteractionMixin:
         self._batfly_seed += 1
         self.batflies.append(b)
         self.world_version += 1
-        self._exit_place_mode()
+        self._after_place(self.can_place_batfly())
         self.update()
         return b
 
@@ -831,7 +945,7 @@ class ItemInteractionMixin:
             if b.state == ItemState.CARRIED:
                 b.held_by_hand = None
             for pet in self.pets:
-                if b is pet.body.carried_fruit:      # 复用果子叼持槽
+                if b is pet.body.carried_fruit:  # 复用果子叼持槽
                     pet.body.release_fruit()
             b.state = ItemState.EATEN
         if self.batflies:
@@ -905,7 +1019,7 @@ class ItemInteractionMixin:
             b.vx *= k
             b.vy *= k
         if b.state == ItemState.MOUSE:
-            b.state = ItemState.FREE          # 不粘边，直接 FREE
+            b.state = ItemState.FREE  # 不粘边，直接 FREE
         self._dragged_batfly = None
         self._batfly_drag_last = None
         return True
@@ -922,7 +1036,7 @@ class ItemInteractionMixin:
         for b in self.batflies:
             key = id(b)
             if b.state != ItemState.MOUSE or b.eaten > 0:
-                cd.pop(key, None)             # __slots__ 无法挂属性，用 id 字典
+                cd.pop(key, None)  # __slots__ 无法挂属性，用 id 字典
                 continue
             if key in cd:
                 continue
@@ -952,13 +1066,17 @@ class ItemInteractionMixin:
         y = bat.last_y + (bat.y - bat.last_y) * ts
         lx = bat.last_lower_x + (bat.lower_x - bat.last_lower_x) * ts
         ly = bat.last_lower_y + (bat.lower_y - bat.last_lower_y) * ts
-        if bat.eaten > 0:                             # 仅被吃倒计时抖动
+        if bat.eaten > 0:  # 仅被吃倒计时抖动
             vf = self._batfly_vibe + (id(bat) & 0x3F)
             ox, oy = (vf % 3) - 1.0, ((vf // 2) % 3) - 1.0
-            x += ox; y += oy; lx += ox; ly += oy
+            x += ox
+            y += oy
+            lx += ox
+            ly += oy
         body_ang = _ang_from_up(x - lx, y - ly)
-        abdomen = clampf(math.hypot(x - lx, y - ly),
-                         BATFLY_ABDOMEN_MIN, BATFLY_ABDOMEN_MAX)
+        abdomen = clampf(
+            math.hypot(x - lx, y - ly), BATFLY_ABDOMEN_MIN, BATFLY_ABDOMEN_MAX
+        )
         flap_depth = bat.last_flap_depth + (bat.flap_depth - bat.last_flap_depth) * ts
         steer = lerp(bat.last_steer, bat.steer, ts)
         p.save()
@@ -966,16 +1084,24 @@ class ItemInteractionMixin:
         p.setPen(Qt.PenStyle.NoPen)
         for i in range(2):
             if (i == 0 and bat.bites != 3) or (i == 1 and bat.bites <= 1):
-                continue                              # bites: 3两翅 2一翅 1无翅
+                continue  # bites: 3两翅 2一翅 1无翅
             wcur = lerp(bat.wings[i][1], bat.wings[i][0], ts)
             a = lerp(wcur, 0.5, lerp(0.3, 0.0, flap_depth))
-            steer_fold = 0.0 if (steer < 0.0) == (i == 0) else clampf(abs(steer * 0.85) - 0.1, 0.0, 1.0)
+            steer_fold = (
+                0.0
+                if (steer < 0.0) == (i == 0)
+                else clampf(abs(steer * 0.85) - 0.1, 0.0, 1.0)
+            )
             a = lerp(a, 0.5, steer_fold)
             a = inv_lerp(0.01, 0.99, a * a)
             # 折角压缩到 40~145°，防读作垂臂
             wing_ang = (-1.0 if i == 0 else 1.0) * (40.0 + 105.0 * a) + body_ang
-            sx = 1.0 if bat.flap_speed < 0.0 else 1.0 - 0.6 * math.sin(wcur * math.pi) * (1.0 - steer_fold)
-            sx *= (-1.0 if i == 0 else 1.0)
+            sx = (
+                1.0
+                if bat.flap_speed < 0.0
+                else 1.0 - 0.6 * math.sin(wcur * math.pi) * (1.0 - steer_fold)
+            )
+            sx *= -1.0 if i == 0 else 1.0
             self._draw_batfly_wing(p, x, y, wing_ang, sx)
         self._draw_batfly_body(p, x, y, body_ang, abdomen)
         self._draw_batfly_eyes(p, x, y, body_ang)
@@ -983,13 +1109,13 @@ class ItemInteractionMixin:
 
     def _draw_batfly_body(self, p, x, y, ang, abdomen):
         """连续水滴身绘制。"""
-        q = int(round(abdomen * 8.0))         # 1/8px 量化，路径按档缓存
+        q = int(round(abdomen * 8.0))  # 1/8px 量化，路径按档缓存
         path = _BATFLY_BODY_PATHS.get(q)
         if path is None:
             hw = BATFLY_BODY_HALF_W
-            yh = -BATFLY_BODY_HALF_H              # 头端
-            ym = -BATFLY_BODY_HALF_H * 0.3        # 最宽处
-            yt = q / 8.0                          # 腹尖
+            yh = -BATFLY_BODY_HALF_H  # 头端
+            ym = -BATFLY_BODY_HALF_H * 0.3  # 最宽处
+            yt = q / 8.0  # 腹尖
             path = QPainterPath()
             path.moveTo(0.0, yh)
             # 头圆→最宽→软尖→最宽→头圆，四段贝塞尔
@@ -1010,7 +1136,9 @@ class ItemInteractionMixin:
     def _draw_batfly_wing(self, p, x, y, ang, sx):
         global _BATFLY_WING_POLY
         if _BATFLY_WING_POLY is None:
-            _BATFLY_WING_POLY = QPolygonF([QPointF(px, py) for px, py in _BATFLY_WING_PTS])
+            _BATFLY_WING_POLY = QPolygonF(
+                [QPointF(px, py) for px, py in _BATFLY_WING_PTS]
+            )
         p.save()
         p.translate(x, y)
         if ang:
@@ -1026,8 +1154,12 @@ class ItemInteractionMixin:
         if ang:
             p.rotate(ang)
         p.setBrush(_BATFLY_EYE_C)
-        p.drawEllipse(QPointF(-BATFLY_EYE_DX, -BATFLY_EYE_DY), BATFLY_EYE_RAD, BATFLY_EYE_RAD)
-        p.drawEllipse(QPointF(BATFLY_EYE_DX, -BATFLY_EYE_DY), BATFLY_EYE_RAD, BATFLY_EYE_RAD)
+        p.drawEllipse(
+            QPointF(-BATFLY_EYE_DX, -BATFLY_EYE_DY), BATFLY_EYE_RAD, BATFLY_EYE_RAD
+        )
+        p.drawEllipse(
+            QPointF(BATFLY_EYE_DX, -BATFLY_EYE_DY), BATFLY_EYE_RAD, BATFLY_EYE_RAD
+        )
         p.restore()
 
     def _draw_batfly_hint(self, p):
@@ -1038,6 +1170,7 @@ class ItemInteractionMixin:
         if not (0.0 <= cx <= self._WL and 0.0 <= cy <= self._HL):
             return
         from PySide6.QtGui import QPainter
+
         p.save()
         p.setOpacity(0.5)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -1056,6 +1189,154 @@ class ItemInteractionMixin:
         self._begin_place_capture()
         return True
 
+    def _after_place(self, can_more: bool):
+        """连续放置：还能再放就留在放置模式，否则自动退出。"""
+        if not can_more:
+            self._exit_place_mode()
+
+    # ── 移除单个（连续）──
+    def enter_remove_mode(self):
+        """进入"移除选中物品"模式，左键连续移除，右键/Esc 退出。"""
+        self._place_mode = True
+        self._place_kind = "remove"
+        self._begin_place_capture()
+        return True
+
+    def _remove_target(self, pos):
+        """光标最近命中的可移除实体 (obj, kind)；无则 (None, None)。"""
+        if pos is None:
+            return None, None
+        from .pole import VERTICAL
+
+        cx, cy = pos
+        best, bestd, kind = None, 1e9, None
+        pad = self._REMOVE_GRAB_PAD
+
+        def consider(obj, d, k):
+            nonlocal best, bestd, kind
+            if d <= pad and d < bestd:
+                best, bestd, kind = obj, d, k
+
+        for f in self.fruits:
+            if f.state in (ItemState.FREE, ItemState.HANGING):
+                consider(f, math.hypot(cx - f.x, cy - f.y) - f.rad, "fruit")
+        for s in self.stones:
+            if s.state == ItemState.FREE:
+                consider(s, math.hypot(cx - s.x, cy - s.y) - s.rad, "stone")
+        for m in self.slimemolds:
+            if m.state in (ItemState.FREE, ItemState.HANGING):
+                consider(m, math.hypot(cx - m.x, cy - m.y) - m.rad, "slimemold")
+        for b in self.batflies:
+            if b.state not in (ItemState.EATEN, ItemState.GONE):
+                consider(b, math.hypot(cx - b.x, cy - b.y) - b.rad, "batfly")
+        for pl in self.poles:
+            if pl.state != ItemState.FREE:
+                continue
+            if pl.kind == VERTICAL:  # 竖杆用杆体中点近似
+                d = math.hypot(cx - pl.x, cy - (pl.ay + pl.by) * 0.5)
+            else:  # 横杆看垂距，沿杆可长，不做水平限制
+                d = abs(cy - pl.ay)
+            consider(pl, d - POLE_RAD, "pole")
+        lamp = self.lamp
+        if lamp is not None:
+            consider(lamp, math.hypot(cx - lamp.bulb_x, cy - lamp.bulb_y) - 6.0, "lamp")
+        return best, kind
+
+    @staticmethod
+    def _remove_center(obj, kind, pos):
+        """高亮环圆心。"""
+        if kind == "lamp":
+            return obj.bulb_x, obj.bulb_y
+        if kind == "pole":  # 杆体细长，直接用光标点
+            return pos[0], pos[1]
+        return obj.x, obj.y
+
+    def _remove_at(self, pos):
+        """移除光标下命中的单个实体；返回是否移除成功。"""
+        obj, kind = self._remove_target(pos)
+        if obj is None:
+            return False
+        if kind == "fruit":
+            self._remove_fruit(obj)
+        elif kind == "stone":
+            self._remove_stone(obj)
+        elif kind == "slimemold":
+            self._remove_slimemold(obj)
+        elif kind == "batfly":
+            self._remove_batfly(obj)
+        elif kind == "pole":
+            self._remove_pole(obj)
+        elif kind == "lamp":
+            self._remove_lamp()
+        self.world_version += 1
+        self.update()
+        return True
+
+    def _remove_fruit(self, f):
+        f.stalk = None
+        f.held_by_hand = None
+        for pet in self.pets:
+            if f is pet.body.carried_fruit:
+                pet.body.release_fruit()
+        f.state = ItemState.EATEN
+        if f in self.fruits:
+            self.fruits.remove(f)
+        if self._dragged_fruit is f:
+            self._dragged_fruit = None
+            self._drag_last = None
+
+    def _remove_stone(self, s):
+        for pet in self.pets:
+            if s is getattr(pet.body, "carried_stone", None):
+                rs = getattr(pet.body, "release_stone", None)
+                if rs is not None:
+                    rs()
+        s.state = ItemState.GONE
+        if s in self.stones:
+            self.stones.remove(s)
+        if self._dragged_stone is s:
+            self._dragged_stone = None
+            self._stone_drag_last = None
+
+    def _remove_slimemold(self, m):
+        for pet in self.pets:
+            if m is pet.body.carried_fruit:  # 复用果子叼持槽
+                pet.body.release_fruit()
+        m.state = ItemState.EATEN
+        if m in self.slimemolds:
+            self.slimemolds.remove(m)
+        if self._dragged_slimemold is m:
+            self._dragged_slimemold = None
+            self._slime_drag_last = None
+
+    def _remove_batfly(self, b):
+        b.stalk = None
+        b.held_by_hand = None
+        for pet in self.pets:
+            if b is pet.body.carried_fruit:  # 复用果子叼持槽
+                pet.body.release_fruit()
+        b.state = ItemState.EATEN
+        if b in self.batflies:
+            self.batflies.remove(b)
+        if self._dragged_batfly is b:
+            self._dragged_batfly = None
+            self._batfly_drag_last = None
+        cd = getattr(self, "_batfly_shove_cd", None)
+        if cd is not None:
+            cd.pop(id(b), None)
+
+    def _remove_pole(self, pl):
+        pl.state = ItemState.GONE
+        if pl in self.poles:
+            self.poles.remove(pl)
+        self.geometry_version += 1
+
+    def _remove_lamp(self):
+        if self.lamp is not None:
+            self.lamp.state = ItemState.GONE
+            self.lamp = None
+            self.geometry_version += 1
+
     def _begin_place_capture(self):
         """进入放置模式，grabMouse 防点击被覆盖窗截走。"""
         hk = getattr(self, "_hotkey_filter", None)
@@ -1064,6 +1345,7 @@ class ItemInteractionMixin:
         if not self._hwnd:
             self._hwnd = int(self.winId())
         from ..control.mouse import set_passthrough
+
         set_passthrough(self._hwnd, False)
         self._passthrough = False
         self.setCursor(Qt.CursorShape.CrossCursor)
@@ -1096,10 +1378,14 @@ class ItemInteractionMixin:
             n = len(pts)
             if n < 2:
                 continue
-            pts[-1] = (f.last_x + (f.x - f.last_x) * ts,
-                       f.last_y + (f.y - f.last_y) * ts)
-            widths = [STALK_ROOT_W + (STALK_TIP_W - STALK_ROOT_W) * (i / (n - 1))
-                      for i in range(n)]
+            pts[-1] = (
+                f.last_x + (f.x - f.last_x) * ts,
+                f.last_y + (f.y - f.last_y) * ts,
+            )
+            widths = [
+                STALK_ROOT_W + (STALK_TIP_W - STALK_ROOT_W) * (i / (n - 1))
+                for i in range(n)
+            ]
             draw_rope(p, pts, widths, color=STALK_COLOR)
 
     def _draw_fruits(self, p):
@@ -1109,8 +1395,16 @@ class ItemInteractionMixin:
             y = f.last_y + (f.y - f.last_y) * ts
             rx, ry = f.rotation
             rot_deg = _ang_from_up(rx, ry)
-            draw_fruit(p, self.atlas, x, y, rot_deg, f.bites,
-                       flesh_color=FRUIT_FLESH, outline_color=FRUIT_OUTLINE)
+            draw_fruit(
+                p,
+                self.atlas,
+                x,
+                y,
+                rot_deg,
+                f.bites,
+                flesh_color=FRUIT_FLESH,
+                outline_color=FRUIT_OUTLINE,
+            )
 
     def _draw_stones(self, p):
         ts = self._ts
@@ -1123,16 +1417,97 @@ class ItemInteractionMixin:
                 sp = math.hypot(s.vx, s.vy)
                 if sp > STONE_TRAIL_MIN_SPEED:
                     length = min(sp * STONE_TRAIL_LEN_K, STONE_TRAIL_LEN_MAX)
-                    draw_stone_trail(p, x, y, s.vx / sp, s.vy / sp, length,
-                                     STONE_TRAIL_HALFW, STONE_COLOR, STONE_TRAIL_ALPHA)
+                    draw_stone_trail(
+                        p,
+                        x,
+                        y,
+                        s.vx / sp,
+                        s.vy / sp,
+                        length,
+                        STONE_TRAIL_HALFW,
+                        STONE_COLOR,
+                        STONE_TRAIL_ALPHA,
+                    )
             if s.vibrate > 0:
                 x += (s.vibrate % 3) - 1.0
                 y += ((s.vibrate // 2) % 3) - 1.0
-            draw_stone(p, self.atlas, x, y, rot, s.frame,
-                       color=STONE_COLOR, scale=STONE_DRAW_SCALE)
+            draw_stone(
+                p,
+                self.atlas,
+                x,
+                y,
+                rot,
+                s.frame,
+                color=STONE_COLOR,
+                scale=STONE_DRAW_SCALE,
+            )
+
+    def _draw_place_banner(self, p):
+        """放置/移除模式顶部操作提示横幅。"""
+        from PySide6.QtGui import QFont
+
+        key = "place_hint_remove" if self._place_kind == "remove" else "place_hint_cont"
+        label = t(key)
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        f = QFont()
+        f.setPointSizeF(9.0)
+        p.setFont(f)
+        fm = p.fontMetrics()
+        pad = 8.0
+        tw = fm.horizontalAdvance(label)
+        th = fm.height()
+        x = (self._WL - tw) * 0.5
+        y = 8.0
+        bg = QPainterPath()
+        bg.addRoundedRect(x - pad, y, tw + pad * 2.0, th + 4.0, 6.0, 6.0)
+        p.fillPath(bg, QColor(0, 0, 0, 150))
+        p.setPen(QColor(255, 255, 255, 220))
+        p.drawText(
+            QRectF(x, y + 2.0, tw, th),
+            Qt.AlignmentFlag.AlignCenter,
+            label,
+        )
+        p.restore()
+
+    def _draw_remove_highlight(self, p):
+        """移除模式：准星 + 命中实体的红色高亮环。"""
+        cur = self.cursor_logical()
+        if cur is None:
+            return
+        cx, cy = cur
+        if not (0.0 <= cx <= self._WL and 0.0 <= cy <= self._HL):
+            return
+        p.save()
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor(210, 96, 84, 200), 1.4, Qt.PenStyle.DashLine))
+        p.drawLine(QPointF(cx - 12.0, cy), QPointF(cx + 12.0, cy))
+        p.drawLine(QPointF(cx, cy - 12.0), QPointF(cx, cy + 12.0))
+        obj, kind = self._remove_target((cx, cy))
+        if obj is not None:
+            hx, hy = self._remove_center(obj, kind, (cx, cy))
+            rr = self._REMOVE_MARK_RAD
+            # 先光晕后红环，防光晕盖住描边
+            grad = QRadialGradient(QPointF(hx, hy), rr)
+            grad.setColorAt(0.0, QColor(235, 70, 60, 90))
+            grad.setColorAt(1.0, QColor(235, 70, 60, 0))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(grad)
+            p.drawEllipse(QPointF(hx, hy), rr, rr)
+            p.setPen(QPen(QColor(235, 70, 60), 2.0))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QPointF(hx, hy), rr, rr)
+        p.restore()
 
     def _draw_place_hint(self, p):
         from PySide6.QtGui import QPen
+
+        if self._place_kind == "remove":
+            self._draw_remove_highlight(p)
+            self._draw_place_banner(p)
+            return
+
+        self._draw_place_banner(p)
 
         if self._place_kind in ("vpole", "hpole"):
             self._draw_pole_hint(p)
@@ -1150,7 +1525,7 @@ class ItemInteractionMixin:
             self._draw_batfly_hint(p)
             return
 
-        stone = (self._place_kind == "stone")
+        stone = self._place_kind == "stone"
         p.save()
         if not stone and not self.zerog_on:
             pen = QPen(QColor(255, 255, 255, 110), 1.0, Qt.PenStyle.DashLine)
@@ -1163,10 +1538,25 @@ class ItemInteractionMixin:
             if 0.0 <= cx <= self._WL and 0.0 <= cy <= self._HL:
                 p.setOpacity(0.5)
                 if stone:
-                    draw_stone(p, self.atlas, cx, cy, 0.0,
-                               "Pebble" + str(1 + self._stone_seed % 14),
-                               color=STONE_COLOR, scale=STONE_DRAW_SCALE)
+                    draw_stone(
+                        p,
+                        self.atlas,
+                        cx,
+                        cy,
+                        0.0,
+                        "Pebble" + str(1 + self._stone_seed % 14),
+                        color=STONE_COLOR,
+                        scale=STONE_DRAW_SCALE,
+                    )
                 else:
-                    draw_fruit(p, self.atlas, cx, cy, 0.0, 3,
-                               flesh_color=FRUIT_FLESH, outline_color=FRUIT_OUTLINE)
+                    draw_fruit(
+                        p,
+                        self.atlas,
+                        cx,
+                        cy,
+                        0.0,
+                        3,
+                        flesh_color=FRUIT_FLESH,
+                        outline_color=FRUIT_OUTLINE,
+                    )
         p.restore()
