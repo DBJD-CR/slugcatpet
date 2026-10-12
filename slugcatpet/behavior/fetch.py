@@ -1,4 +1,5 @@
 """果取薄应用：选果/够取交规划层驱动，接触抓取与 grabbed→carry_fall→eat 留本地。"""
+
 from __future__ import annotations
 import math
 
@@ -12,10 +13,27 @@ EAT_INTERVAL = 15
 EAT_APPROACH = 12
 EAT_HOLD_POSE = 0.25
 EAT_CHOMP_POSE = 1.0
+EAT_STRIKE_POW = 3.0  # 递送/复位曲线指数，越大越快（两端同速）
+EAT_PLATEAU = 0.34  # 嘴部平台占比：上举与复位各 (1-EAT_PLATEAU)/2
+EAT_PEAK_PHASE = 0.5  # 咬合对齐脉冲峰值
 BITE_HEAD_NUDGE = 2.0
 CARRY_FALL_TIMEOUT = 200
 
 _EDIBLE_STATES = ("free", "hanging")
+
+
+def eat_chomp_pulse(phase):
+    """咀嚼脉冲 0→峰→0：快上举→嘴部平台→快复位，两端等速的梯形曲线。"""
+    if phase <= 0.0 or phase >= 1.0:
+        return 0.0
+    if phase <= EAT_PEAK_PHASE:
+        u = phase / EAT_PEAK_PHASE
+    else:
+        u = (1.0 - phase) / (1.0 - EAT_PEAK_PHASE)
+    if u >= 1.0 - EAT_PLATEAU:
+        return 1.0
+    t = u / (1.0 - EAT_PLATEAU)
+    return 1.0 - (1.0 - t) ** EAT_STRIKE_POW
 
 
 def _dist(ax, ay, bx, by):
@@ -45,10 +63,10 @@ def fetch_candidates(planner, edibles, diet=None):
         if f.state not in _EDIBLE_STATES:
             continue
         if not getattr(f, "fetch_ready", True):
-            continue    # 飞行中蝙蝠够不到
+            continue  # 飞行中蝙蝠够不到
         meat = getattr(f, "is_meat", False)
         if meat and diet in (DIET_VEGETARIAN, DIET_SPECIAL):
-            continue    # 素食/圣徒不自主吃肉
+            continue  # 素食/圣徒不自主吃肉
         g = _edible_goal(f)
         if planner.in_cooldown(g):
             continue
@@ -119,7 +137,7 @@ class FruitFetcher:
         if self._grab_dist() < tuning.GRAB_REACH:
             self._reset_tongue()
             if getattr(self.target, "stuck_pos", None) is not None:
-                self.target.stuck_pos = None    # 抓取瞬间剥离黏菌
+                self.target.stuck_pos = None  # 抓取瞬间剥离黏菌
             self.body.grab_fruit(self.target, self.grab_side)
             self.phase = "grabbed"
             self.timer = 0
@@ -230,18 +248,24 @@ class FruitFetcher:
 
         # 预咬摆动
         if self._eat_approaching:
-            self.body.eat_raise = EAT_HOLD_POSE * min(1.0, self.eat_counter / EAT_APPROACH)
+            self.body.eat_raise = EAT_HOLD_POSE * (
+                1.0 - (1.0 - self.eat_counter / EAT_APPROACH) ** EAT_STRIKE_POW
+            )
             if self.eat_counter >= EAT_APPROACH:
                 self._eat_approaching = False
                 self.eat_counter = 0
                 self._bit_this_cycle = False
             return False
 
-        # 咀嚼周期，峰值咬一口
+        # 咀嚼周期：快上举→嘴部平台→快复位
         phase = min(1.0, self.eat_counter / EAT_INTERVAL)
-        pulse = math.sin(phase * math.pi)
-        self.body.eat_raise = EAT_HOLD_POSE + (EAT_CHOMP_POSE - EAT_HOLD_POSE) * pulse
-        if self.eat_counter >= EAT_INTERVAL // 2 and not self._bit_this_cycle:
+        self.body.eat_raise = EAT_HOLD_POSE + (
+            EAT_CHOMP_POSE - EAT_HOLD_POSE
+        ) * eat_chomp_pulse(phase)
+        if (
+            self.eat_counter >= EAT_INTERVAL * EAT_PEAK_PHASE
+            and not self._bit_this_cycle
+        ):
             self._bit_this_cycle = True
             self._bite_head_nudge(f)
             if self.body.bite_carried():
