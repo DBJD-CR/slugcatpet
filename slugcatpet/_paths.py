@@ -1,4 +1,5 @@
 """Resolve asset and writable data paths across dev and frozen (PyInstaller) contexts."""
+
 from __future__ import annotations
 import sys
 from pathlib import Path
@@ -42,3 +43,18 @@ def assets_dir() -> Path:
 def bundled_assets_dir() -> Path:
     """仓库内资产目录（开发降级用）。"""
     return resource_dir() / "assets"
+
+
+def bundled_music_dir() -> Path:
+    """内置音乐目录（只读）：开发者放置随程序分发的曲目。"""
+    return resource_dir() / "music"
+
+
+def user_music_dir() -> Path:
+    """用户音乐目录（~/.slugcatpet/music），可直接往里丢音乐文件。"""
+    d = user_dir() / "music"
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return d
