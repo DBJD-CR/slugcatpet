@@ -1,13 +1,38 @@
 """侧边 Tab：收起态可拖动箭头，展开态图标盘+动作列。"""
+
 from __future__ import annotations
 import math
-from PySide6.QtWidgets import (QWidget, QPushButton, QVBoxLayout, QGridLayout,
-                               QFrame, QLabel, QGraphicsOpacityEffect)
-from PySide6.QtCore import (Qt, QTimer, QPropertyAnimation, QRect, QRectF,
-                            QPointF, QPoint, QSize, QEvent)
-from PySide6.QtGui import (QGuiApplication, QColor, QPainter, QPen, QPolygonF,
-                           QPainterPath, QPixmap, QIcon, QLinearGradient,
-                           QRadialGradient)
+from PySide6.QtWidgets import (
+    QWidget,
+    QPushButton,
+    QVBoxLayout,
+    QGridLayout,
+    QFrame,
+    QLabel,
+    QGraphicsOpacityEffect,
+)
+from PySide6.QtCore import (
+    Qt,
+    QTimer,
+    QPropertyAnimation,
+    QRect,
+    QRectF,
+    QPointF,
+    QSize,
+    QEvent,
+)
+from PySide6.QtGui import (
+    QGuiApplication,
+    QColor,
+    QPainter,
+    QPen,
+    QPolygonF,
+    QPainterPath,
+    QPixmap,
+    QIcon,
+    QLinearGradient,
+    QRadialGradient,
+)
 from ..i18n import t
 from ..cats import get as get_cat_def
 from .tips import install as install_tip
@@ -19,7 +44,7 @@ _FACE_ATLAS, _FACE_FAM = _SAINT.frames["face"]
 
 COLLAPSED_W, COLLAPSED_H = 24, 48
 EXPANDED_W = 120
-EXPANDED_H = 250                       # 仅估值，实际走 _expanded_h()
+EXPANDED_H = 250  # 仅估值，实际走 _expanded_h()
 SLIDE_MS = 150
 # 图标盘配色（贴合面板绿橄榄调）
 _ICON_GREY = QColor(192, 199, 183)
@@ -52,7 +77,7 @@ def _pen(c, w, cap=True):
     return p
 
 
-_CAT_HEAD = "Kill_Slugcat"             # 横杆实心猫头帧
+_CAT_HEAD = "Kill_Slugcat"  # 横杆实心猫头帧
 
 
 def _cat_ready(atlas):
@@ -60,9 +85,15 @@ def _cat_ready(atlas):
     if atlas is None:
         return False
     base = atlas.get("base")
-    return (base.has("BodyA") and base.has("LegsAVerticalPole") and base.has("PlayerArm0")
-            and atlas.get(_FACE_ATLAS).has(_FACE_FAM + "1") and base.has("OnTopOfTerrainHand")
-            and atlas.get(_HEAD_ATLAS).has(_HEAD_FAM + "0") and atlas.get("ui").has(_CAT_HEAD))
+    return (
+        base.has("BodyA")
+        and base.has("LegsAVerticalPole")
+        and base.has("PlayerArm0")
+        and atlas.get(_FACE_ATLAS).has(_FACE_FAM + "1")
+        and base.has("OnTopOfTerrainHand")
+        and atlas.get(_HEAD_ATLAS).has(_HEAD_FAM + "0")
+        and atlas.get("ui").has(_CAT_HEAD)
+    )
 
 
 def _blit(p, atlas, key, frame, center, k, w, rot=0.0, tint=None):
@@ -85,12 +116,12 @@ def _pole_rod(p, r, vertical):
     if vertical:
         bw = w * 0.22
         rod = QRectF(cx - bw / 2, r.top() + h * 0.04, bw, h * 0.92)
-        g = QLinearGradient(rod.left(), 0.0, rod.right(), 0.0)   # 横向受光
+        g = QLinearGradient(rod.left(), 0.0, rod.right(), 0.0)  # 横向受光
         rad = bw / 2
     else:
         bh = h * 0.24
         rod = QRectF(r.left() + w * 0.04, cy - bh / 2, w * 0.92, bh)
-        g = QLinearGradient(0.0, rod.top(), 0.0, rod.bottom())   # 纵向受光
+        g = QLinearGradient(0.0, rod.top(), 0.0, rod.bottom())  # 纵向受光
         rad = bh / 2
     g.setColorAt(0.0, _POLE_EDGE)
     g.setColorAt(0.30, _POLE_SHEEN)
@@ -123,27 +154,40 @@ def _paint_pole_icon(p, r, vertical, atlas=None):
         _blit(p, atlas, "base", "BodyA", Pt(0.64, 0.48), 0.50, w)
         _blit(p, atlas, "base", "PlayerArm0", Pt(0.56, 0.47), 0.36, w, rot=16.0)
         _blit(p, atlas, _HEAD_ATLAS, _HEAD_FAM + "0", Pt(0.64, 0.30), 0.46, w)
-        _blit(p, atlas, _FACE_ATLAS, _FACE_FAM + "1", Pt(0.64, 0.28), 0.46, w, tint=_ICON_EYE)
-        _blit(p, atlas, "base", "OnTopOfTerrainHand", Pt(0.39, 0.35), 0.37, w)  # 左手·杆后
-        _pole_rod(p, r, vertical)                           # 杆压上
-        _blit(p, atlas, "base", "OnTopOfTerrainHand", Pt(0.575, 0.47), 0.37, w)  # 右手·杆前
+        _blit(
+            p,
+            atlas,
+            _FACE_ATLAS,
+            _FACE_FAM + "1",
+            Pt(0.64, 0.28),
+            0.46,
+            w,
+            tint=_ICON_EYE,
+        )
+        _blit(
+            p, atlas, "base", "OnTopOfTerrainHand", Pt(0.39, 0.35), 0.37, w
+        )  # 左手·杆后
+        _pole_rod(p, r, vertical)  # 杆压上
+        _blit(
+            p, atlas, "base", "OnTopOfTerrainHand", Pt(0.575, 0.47), 0.37, w
+        )  # 右手·杆前
     else:
         # 先画猫，最后压杆盖住臂中段
         p.setPen(_pen(_ICON_SAINT, 0.11 * w))
-        p.drawLine(Pt(0.5, 0.78), Pt(0.5, 0.88))            # 小身
+        p.drawLine(Pt(0.5, 0.78), Pt(0.5, 0.88))  # 小身
         p.setPen(_pen(_ICON_SAINT, 0.045 * w))
-        p.drawLine(Pt(0.5, 0.88), Pt(0.44, 0.97))           # 双腿垂
+        p.drawLine(Pt(0.5, 0.88), Pt(0.44, 0.97))  # 双腿垂
         p.drawLine(Pt(0.5, 0.88), Pt(0.56, 0.97))
-        _blit(p, atlas, "ui", _CAT_HEAD, Pt(0.5, 0.82), 0.60, w)   # 大头
-        p.setPen(_pen(_ICON_SAINT, 0.055 * w))              # 双臂上举
+        _blit(p, atlas, "ui", _CAT_HEAD, Pt(0.5, 0.82), 0.60, w)  # 大头
+        p.setPen(_pen(_ICON_SAINT, 0.055 * w))  # 双臂上举
         p.drawLine(Pt(0.45, 0.74), Pt(0.415, 0.325))
         p.drawLine(Pt(0.55, 0.74), Pt(0.585, 0.325))
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(_ICON_SAINT)
         rr = 0.033 * w
-        for hx in (0.415, 0.585):                           # 爪尖
+        for hx in (0.415, 0.585):  # 爪尖
             p.drawEllipse(Pt(hx, 0.325), rr, rr)
-        _pole_rod(p, r, vertical)                           # 杆最后压上
+        _pole_rod(p, r, vertical)  # 杆最后压上
 
 
 def _paint_place_icon(p, kind, r, atlas=None):
@@ -165,58 +209,100 @@ def _paint_place_icon(p, kind, r, atlas=None):
     elif kind == "stone":
         # 不规则鹅卵石 + 棱线
         ox, oy = cx, cy + h * 0.04
-        pts = [(-0.54, 0.12), (-0.30, -0.40), (0.10, -0.46),
-               (0.54, -0.12), (0.46, 0.34), (-0.12, 0.46)]
+        pts = [
+            (-0.54, 0.12),
+            (-0.30, -0.40),
+            (0.10, -0.46),
+            (0.54, -0.12),
+            (0.46, 0.34),
+            (-0.12, 0.46),
+        ]
         poly = [QPointF(ox + dx * w * 0.56, oy + dy * h * 0.50) for dx, dy in pts]
-        p.setPen(_pen(_ICON_GREY, max(1.8, w * 0.13), cap=False)); p.setBrush(_ICON_GREY)
+        p.setPen(_pen(_ICON_GREY, max(1.8, w * 0.13), cap=False))
+        p.setBrush(_ICON_GREY)
         p.drawPolygon(QPolygonF(poly))
-        p.setPen(_pen(_ICON_FACET, max(1.2, w * 0.07))); p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawLine(QPointF(ox - w * 0.20, oy - h * 0.16),
-                   QPointF(ox + w * 0.08, oy - h * 0.24))
+        p.setPen(_pen(_ICON_FACET, max(1.2, w * 0.07)))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawLine(
+            QPointF(ox - w * 0.20, oy - h * 0.16), QPointF(ox + w * 0.08, oy - h * 0.24)
+        )
     elif kind == "lamp":
         # 灯泡 sprite+暖光圈，缺图集回退矢量
         if atlas is not None and atlas.get("base").has("DangleFruit0A"):
             _paint_lamp_sprite(p, r, atlas)
         else:
             d = w * 0.42
-            bulb = QRectF(0, 0, d, d); bulb.moveCenter(QPointF(cx, cy))
-            p.setPen(Qt.PenStyle.NoPen); p.setBrush(_ICON_AMBER)
+            bulb = QRectF(0, 0, d, d)
+            bulb.moveCenter(QPointF(cx, cy))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(_ICON_AMBER)
             p.drawEllipse(bulb)
-            p.setPen(_pen(_ICON_AMBER, max(1.4, w * 0.08))); p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(_pen(_ICON_AMBER, max(1.4, w * 0.08)))
+            p.setBrush(Qt.BrushStyle.NoBrush)
             bc, rad = bulb.center(), d / 2
             for k in range(8):
                 a = math.radians(22.5 + 45 * k)
                 p.drawLine(
-                    QPointF(bc.x() + math.cos(a) * (rad + w * 0.05),
-                            bc.y() - math.sin(a) * (rad + w * 0.05)),
-                    QPointF(bc.x() + math.cos(a) * (rad + w * 0.18),
-                            bc.y() - math.sin(a) * (rad + w * 0.18)))
+                    QPointF(
+                        bc.x() + math.cos(a) * (rad + w * 0.05),
+                        bc.y() - math.sin(a) * (rad + w * 0.05),
+                    ),
+                    QPointF(
+                        bc.x() + math.cos(a) * (rad + w * 0.18),
+                        bc.y() - math.sin(a) * (rad + w * 0.18),
+                    ),
+                )
     elif kind == "slimemold":
         _paint_slimemold_icon(p, r, atlas)
     elif kind == "batfly":
         # 蝙蝠剪影：身+双翅+亮眼
         bx, by = cx, cy + h * 0.06
-        p.setPen(Qt.PenStyle.NoPen); p.setBrush(_BAT_BODY)
-        for sgn in (-1, 1):                                    # 双翅镜像
-            wing = [QPointF(bx + sgn * w * 0.02, by - h * 0.16),
-                    QPointF(bx + sgn * w * 0.46, by - h * 0.34),
-                    QPointF(bx + sgn * w * 0.30, by + h * 0.06),
-                    QPointF(bx + sgn * w * 0.02, by + h * 0.10)]
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(_BAT_BODY)
+        for sgn in (-1, 1):  # 双翅镜像
+            wing = [
+                QPointF(bx + sgn * w * 0.02, by - h * 0.16),
+                QPointF(bx + sgn * w * 0.46, by - h * 0.34),
+                QPointF(bx + sgn * w * 0.30, by + h * 0.06),
+                QPointF(bx + sgn * w * 0.02, by + h * 0.10),
+            ]
             p.drawPolygon(QPolygonF(wing))
         body = QRectF(0, 0, w * 0.26, h * 0.40)
         body.moveCenter(QPointF(bx, by))
         p.drawEllipse(body)
         p.setBrush(_BAT_EYE)
         p.drawEllipse(QPointF(bx, by - h * 0.09), w * 0.035, w * 0.035)
+    elif kind == "remove":
+        # 灰物质 + 红色减号徽章（移除单个）
+        d = min(w, h) * 0.52
+        orb = QRectF(0, 0, d, d)
+        orb.moveCenter(QPointF(cx - w * 0.09, cy + h * 0.03))
+        p.setPen(_pen(_ICON_GREY, max(1.5, w * 0.10)))
+        p.setBrush(QColor(70, 76, 66, 90))
+        p.drawEllipse(orb)
+        bd = min(w, h) * 0.48
+        badge = QRectF(0, 0, bd, bd)
+        badge.moveCenter(QPointF(cx + w * 0.22, cy - h * 0.20))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(_ICON_RED)
+        p.drawEllipse(badge)
+        p.setPen(_pen(QColor(255, 255, 255), max(1.6, w * 0.09)))
+        bc = badge.center()
+        hw = bd * 0.28
+        p.drawLine(QPointF(bc.x() - hw, bc.y()), QPointF(bc.x() + hw, bc.y()))
     elif kind == "clear":
         # 禁止圈 ⊘
         d = min(w, h) * 0.90
-        ring = QRectF(0, 0, d, d); ring.moveCenter(QPointF(cx, cy))
-        p.setPen(_pen(_ICON_RED, max(1.8, w * 0.13))); p.setBrush(Qt.BrushStyle.NoBrush)
+        ring = QRectF(0, 0, d, d)
+        ring.moveCenter(QPointF(cx, cy))
+        p.setPen(_pen(_ICON_RED, max(1.8, w * 0.13)))
+        p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawEllipse(ring)
         a, rr = math.radians(45), d / 2
-        p.drawLine(QPointF(cx - math.cos(a) * rr, cy + math.sin(a) * rr),
-                   QPointF(cx + math.cos(a) * rr, cy - math.sin(a) * rr))
+        p.drawLine(
+            QPointF(cx - math.cos(a) * rr, cy + math.sin(a) * rr),
+            QPointF(cx + math.cos(a) * rr, cy - math.sin(a) * rr),
+        )
 
 
 def _paint_lamp_sprite(p, r, atlas):
@@ -228,16 +314,17 @@ def _paint_lamp_sprite(p, r, atlas):
     grad.setColorAt(0.0, QColor(255, 150, 70, 165))
     grad.setColorAt(0.45, QColor(255, 100, 35, 80))
     grad.setColorAt(1.0, QColor(255, 70, 0, 0))
-    p.setPen(Qt.PenStyle.NoPen); p.setBrush(grad)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(grad)
     p.drawEllipse(QPointF(cx, cy), glow_r, glow_r)
     sw, sh = atlas.source_size("base", "DangleFruit0A")
-    s = min(w / sw, h / sh) * 0.58                                 # 留出光圈
+    s = min(w / sw, h / sh) * 0.58  # 留出光圈
     dw, dh = sw * s, sh * s
-    dst = QRectF(cx - dw / 2, cy - dh / 2, dw, dh)
     outline = atlas.sprite("base", "DangleFruit0A", _LAMP_OUTLINE)
     flesh = atlas.sprite("base", "DangleFruit0B", _LAMP_FLESH)
-    p.save()                                                      # 镜像：粗头朝上
-    p.translate(cx, cy); p.scale(1.0, -1.0)
+    p.save()  # 镜像：粗头朝上
+    p.translate(cx, cy)
+    p.scale(1.0, -1.0)
     local = QRectF(-dw / 2, -dh / 2, dw, dh)
     p.drawPixmap(local, outline, QRectF(outline.rect()))
     p.drawPixmap(local, flesh, QRectF(flesh.rect()))
@@ -251,16 +338,19 @@ def _paint_fruit_sprite(p, r, atlas):
     dw, dh = sw * s, sh * s
     dst = QRectF(r.center().x() - dw / 2, r.center().y() - dh / 2, dw, dh)
     outline = atlas.sprite("base", "DangleFruit0A", _FRUIT_OUTLINE)
-    flesh = atlas.sprite("base", "DangleFruit0B")                  # 白模，下面渐变上色
-    ss = 4                                                          # 超采样防锯齿
+    flesh = atlas.sprite("base", "DangleFruit0B")  # 白模，下面渐变上色
+    ss = 4  # 超采样防锯齿
     lw, lh = max(1, int(dw * ss)), max(1, int(dh * ss))
-    layer = QPixmap(lw, lh); layer.fill(Qt.GlobalColor.transparent)
+    layer = QPixmap(lw, lh)
+    layer.fill(Qt.GlobalColor.transparent)
     lp = QPainter(layer)
     lp.drawPixmap(QRectF(0, 0, lw, lh), flesh, QRectF(flesh.rect()))
     lp.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
     g = QLinearGradient(QPointF(0, 0), QPointF(0, lh))
-    g.setColorAt(0.0, _FRUIT_TOP); g.setColorAt(1.0, _FRUIT_BOT)
-    lp.fillRect(layer.rect(), g); lp.end()
+    g.setColorAt(0.0, _FRUIT_TOP)
+    g.setColorAt(1.0, _FRUIT_BOT)
+    lp.fillRect(layer.rect(), g)
+    lp.end()
     p.drawPixmap(dst, outline, QRectF(outline.rect()))
     p.drawPixmap(dst, layer, QRectF(layer.rect()))
 
@@ -272,8 +362,11 @@ def _paint_slimemold_icon(p, r, atlas=None):
         s = min(r.width() / sw, r.height() / sh) * 0.92
         dw, dh = sw * s, sh * s
         pm = atlas.sprite("ui", "Symbol_SlimeMold", _SLIME_BODY)
-        p.drawPixmap(QRectF(r.center().x() - dw / 2, r.center().y() - dh / 2, dw, dh),
-                     pm, QRectF(pm.rect()))
+        p.drawPixmap(
+            QRectF(r.center().x() - dw / 2, r.center().y() - dh / 2, dw, dh),
+            pm,
+            QRectF(pm.rect()),
+        )
         return
     cx, cy = r.center().x(), r.center().y()
     w, h = r.width(), r.height()
@@ -282,16 +375,20 @@ def _paint_slimemold_icon(p, r, atlas=None):
     grad = QRadialGradient(QPointF(bx, by), glow_r)
     grad.setColorAt(0.0, _SLIME_GLOW)
     grad.setColorAt(1.0, QColor(255, 150, 50, 0))
-    p.setPen(Qt.PenStyle.NoPen); p.setBrush(grad)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(grad)
     p.drawEllipse(QPointF(bx, by), glow_r, glow_r)
     p.setPen(_pen(_SLIME_TENDRIL, max(1.6, w * 0.09)))
     for dx in (-0.22, -0.05, 0.12, 0.28):
         sx = bx + dx * w
-        p.drawLine(QPointF(sx, by + h * 0.06),
-                   QPointF(sx + dx * w * 0.25, by + h * 0.42))
+        p.drawLine(
+            QPointF(sx, by + h * 0.06), QPointF(sx + dx * w * 0.25, by + h * 0.42)
+        )
     d = min(w, h) * 0.34
-    bulb = QRectF(0, 0, d, d); bulb.moveCenter(QPointF(bx, by))
-    p.setPen(Qt.PenStyle.NoPen); p.setBrush(_SLIME_BODY)
+    bulb = QRectF(0, 0, d, d)
+    bulb.moveCenter(QPointF(bx, by))
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(_SLIME_BODY)
     p.drawEllipse(bulb)
 
 
@@ -301,13 +398,22 @@ def _paint_fruit_fallback(p, r):
     w, h = r.width(), r.height()
     path = QPainterPath()
     path.moveTo(QPointF(cx, r.top()))
-    path.cubicTo(QPointF(cx + w * 0.50, cy - h * 0.10),
-                 QPointF(cx + w * 0.42, r.bottom()), QPointF(cx, r.bottom()))
-    path.cubicTo(QPointF(cx - w * 0.42, r.bottom()),
-                 QPointF(cx - w * 0.50, cy - h * 0.10), QPointF(cx, r.top()))
+    path.cubicTo(
+        QPointF(cx + w * 0.50, cy - h * 0.10),
+        QPointF(cx + w * 0.42, r.bottom()),
+        QPointF(cx, r.bottom()),
+    )
+    path.cubicTo(
+        QPointF(cx - w * 0.42, r.bottom()),
+        QPointF(cx - w * 0.50, cy - h * 0.10),
+        QPointF(cx, r.top()),
+    )
     g = QLinearGradient(QPointF(0, r.top()), QPointF(0, r.bottom()))
-    g.setColorAt(0.0, _FRUIT_TOP); g.setColorAt(1.0, _FRUIT_BOT)
-    p.setPen(Qt.PenStyle.NoPen); p.setBrush(g); p.drawPath(path)
+    g.setColorAt(0.0, _FRUIT_TOP)
+    g.setColorAt(1.0, _FRUIT_BOT)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(g)
+    p.drawPath(path)
 
 
 def _make_place_icon(kind, size, dpr, atlas=None):
@@ -332,16 +438,20 @@ class TabBar(QWidget):
         self.expanded = False
         self._drag = None
 
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint
-                            | Qt.WindowType.WindowStaysOnTopHint
-                            | Qt.WindowType.Tool)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
 
         screen = QGuiApplication.primaryScreen().availableGeometry()
         self._screen = screen
         self._edge_x = screen.x() + screen.width() - COLLAPSED_W
-        self._y = self.params.get("tab_y", screen.y() + (screen.height() - EXPANDED_H) // 2)
+        self._y = self.params.get(
+            "tab_y", screen.y() + (screen.height() - EXPANDED_H) // 2
+        )
 
         self._build()
         self._apply_collapsed()
@@ -351,7 +461,7 @@ class TabBar(QWidget):
         lay = QVBoxLayout(self._panel)
         lay.setContentsMargins(6, 6, 6, 6)
         lay.setSpacing(4)
-        self._panel_lay = lay     # 供 _expanded_h 读内容高度
+        self._panel_lay = lay  # 供 _expanded_h 读内容高度
 
         # 图标盘：3 列网格
         grid = QGridLayout()
@@ -361,14 +471,17 @@ class TabBar(QWidget):
             grid.setColumnStretch(c, 1)
         dpr = QGuiApplication.primaryScreen().devicePixelRatio()
         atlas = getattr(self.pet, "atlas", None)
-        place_items = [("vpole", t("tip_vpole"), self._place_vpole),
-                       ("hpole", t("tip_hpole"), self._place_hpole),
-                       ("fruit", t("tip_fruit"), self._place_fruit),
-                       ("stone", t("tip_stone"), self._place_stone),
-                       ("lamp", t("tip_lamp"), self._place_lamp),
-                       ("slimemold", t("tip_slimemold"), self._place_slimemold),
-                       ("batfly", t("tip_batfly"), self._place_batfly),
-                       ("clear", t("tip_clear"), self._clear_all)]
+        place_items = [
+            ("vpole", t("tip_vpole"), self._place_vpole),
+            ("hpole", t("tip_hpole"), self._place_hpole),
+            ("fruit", t("tip_fruit"), self._place_fruit),
+            ("stone", t("tip_stone"), self._place_stone),
+            ("lamp", t("tip_lamp"), self._place_lamp),
+            ("slimemold", t("tip_slimemold"), self._place_slimemold),
+            ("batfly", t("tip_batfly"), self._place_batfly),
+            ("remove", t("tip_remove"), self._place_remove),
+            ("clear", t("tip_clear"), self._clear_all),
+        ]
         for i, (kind, tip, cb) in enumerate(place_items):
             ib = QPushButton()
             ib.setIcon(QIcon(_make_place_icon(kind, 22, dpr, atlas)))
@@ -395,6 +508,7 @@ class TabBar(QWidget):
             lay.addWidget(b)
             return b
 
+        btn(t("btn_music"), True, self._open_music)
         btn(t("btn_open_settings"), True, self._open_settings)
         btn(t("btn_quit_app"), True, self._quit)
         self._panel.setStyleSheet(
@@ -402,7 +516,8 @@ class TabBar(QWidget):
             "QPushButton{color:#e8f5d8;background:rgba(60,70,55,255);border:1px solid #4a5a3a;"
             "border-radius:5px;font-size:12px;}"
             "QPushButton:enabled:hover{background:rgba(80,100,70,255);}"
-            "QPushButton:disabled{color:#777;background:rgba(45,48,52,255);}")
+            "QPushButton:disabled{color:#777;background:rgba(45,48,52,255);}"
+        )
 
         # eventFilter 区分拖动/点击
         self._arrow = QPushButton("‹", self)
@@ -413,16 +528,20 @@ class TabBar(QWidget):
         self._arrow.setStyleSheet(
             "QPushButton{color:#cfe8b8;background:rgba(40,46,40,180);"
             "border:none;border-top-left-radius:8px;border-bottom-left-radius:8px;font-size:18px;}"
-            "QPushButton:hover{background:rgba(60,72,55,255);}")
+            "QPushButton:hover{background:rgba(60,72,55,255);}"
+        )
 
         # toast 需顶层窗口，防裁切
         self._toast_lbl = QLabel("", None)
-        self._toast_lbl.setWindowFlags(Qt.WindowType.FramelessWindowHint
-                                       | Qt.WindowType.WindowStaysOnTopHint
-                                       | Qt.WindowType.ToolTip)
+        self._toast_lbl.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.ToolTip
+        )
         self._toast_lbl.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self._toast_lbl.setStyleSheet(
-            "QLabel{color:#fff;background:rgba(20,22,26,235);border-radius:6px;padding:5px 9px;font-size:12px;}")
+            "QLabel{color:#fff;background:rgba(20,22,26,235);border-radius:6px;padding:5px 9px;font-size:12px;}"
+        )
         self._toast_lbl.hide()
         self._toast_timer = QTimer(self)
         self._toast_timer.setSingleShot(True)
@@ -458,14 +577,39 @@ class TabBar(QWidget):
         self.setGeometry(x, self._y, EXPANDED_W, h)
         self._panel.setGeometry(0, 0, EXPANDED_W, h)
         self._panel.show()
-        self._arrow.setGeometry(0, 0, 16, h)   # 展开态收起条
+        self._arrow.setGeometry(0, 0, 16, h)  # 展开态收起条
         self._arrow.setText("›")
         self._arrow.setGraphicsEffect(None)
         self._arrow.raise_()
 
+    def rebuild_ui(self):
+        """语言切换：按当前语言重建面板，保留展开态。"""
+        was_expanded = self.expanded
+        arrow = getattr(self, "_arrow", None)
+        if arrow is not None:
+            arrow.setParent(None)
+            arrow.deleteLater()
+        panel = getattr(self, "_panel", None)
+        if panel is not None:
+            panel.setParent(None)
+            panel.deleteLater()
+        toast = getattr(self, "_toast_lbl", None)
+        if toast is not None:
+            toast.deleteLater()
+        timer = getattr(self, "_toast_timer", None)
+        if timer is not None:
+            timer.deleteLater()
+        self._build()
+        if was_expanded:
+            self._apply_expanded()
+        else:
+            self._apply_collapsed()
+
     def toggle(self):
         if self.expanded:
-            self._animate_to(self._edge_x, COLLAPSED_W, COLLAPSED_H, self._apply_collapsed)
+            self._animate_to(
+                self._edge_x, COLLAPSED_W, COLLAPSED_H, self._apply_collapsed
+            )
         else:
             self._apply_expanded()
 
@@ -483,22 +627,34 @@ class TabBar(QWidget):
             try:
                 t = ev.type()
             except AttributeError:
-                return False                   # 关停期丢 type，放行
-            if t == QEvent.Type.MouseButtonPress and ev.button() == Qt.MouseButton.LeftButton:
+                return False  # 关停期丢 type，放行
+            if (
+                t == QEvent.Type.MouseButtonPress
+                and ev.button() == Qt.MouseButton.LeftButton
+            ):
                 self._arrow_press = ev.globalPosition().y() - self.y()
                 self._arrow_moved = False
                 return False
-            if t == QEvent.Type.MouseMove and self._arrow_press is not None and not self.expanded:
+            if (
+                t == QEvent.Type.MouseMove
+                and self._arrow_press is not None
+                and not self.expanded
+            ):
                 ny = int(ev.globalPosition().y() - self._arrow_press)
-                ny = max(self._screen.y(),
-                         min(self._screen.y() + self._screen.height() - self.height(), ny))
+                ny = max(
+                    self._screen.y(),
+                    min(self._screen.y() + self._screen.height() - self.height(), ny),
+                )
                 if abs(ny - self._y) > 2:
                     self._arrow_moved = True
                 self._y = ny
                 self.move(self._edge_x, ny)
                 return False
-            if t == QEvent.Type.MouseButtonRelease and ev.button() == Qt.MouseButton.LeftButton \
-                    and self._arrow_press is not None:
+            if (
+                t == QEvent.Type.MouseButtonRelease
+                and ev.button() == Qt.MouseButton.LeftButton
+                and self._arrow_press is not None
+            ):
                 moved = self._arrow_moved
                 self._arrow_press = None
                 self._arrow_moved = False
@@ -514,7 +670,13 @@ class TabBar(QWidget):
         self._toast_lbl.adjustSize()
         # 全局坐标定位于 tab 左侧
         right = EXPANDED_W if self.expanded else COLLAPSED_W
-        gx = self._screen.x() + self._screen.width() - self._toast_lbl.width() - right - 8
+        gx = (
+            self._screen.x()
+            + self._screen.width()
+            - self._toast_lbl.width()
+            - right
+            - 8
+        )
         gy = self._y + 10
         self._toast_lbl.move(gx, gy)
         self._toast_lbl.show()
@@ -573,12 +735,37 @@ class TabBar(QWidget):
         else:
             self._toast(t("toast_max_hpole"))
 
+    def _place_remove(self):
+        has_obj = (
+            self.pet.fruits
+            or self.pet.stones
+            or self.pet.slimemolds
+            or self.pet.batflies
+            or self.pet.poles
+            or self.pet.lamp is not None
+        )
+        if has_obj:
+            self.pet.enter_remove_mode()
+            self._collapse()
+        else:
+            self._toast(t("toast_no_object"))
+
     def _clear_all(self):
-        if (self.pet.fruits or self.pet.stones or self.pet.slimemolds
-                or self.pet.batflies or self.pet.poles or self.pet.lamp is not None):
+        if (
+            self.pet.fruits
+            or self.pet.stones
+            or self.pet.slimemolds
+            or self.pet.batflies
+            or self.pet.poles
+            or self.pet.lamp is not None
+        ):
             self.pet.clear_all_items()
         else:
             self._toast(t("toast_no_object"))
+
+    def _open_music(self):
+        # 转发给 window 打开音乐面板
+        self.pet.open_music()
 
     def _open_settings(self):
         # 转发给 window 打开设置窗
@@ -588,6 +775,7 @@ class TabBar(QWidget):
         # 释放劫持后再 quit
         try:
             from ..platform.cursorfx import abort_all
+
             abort_all()
         except Exception:
             pass
