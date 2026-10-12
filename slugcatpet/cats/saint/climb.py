@@ -1,4 +1,5 @@
 """舌头爬墙 + 吊顶：TongueClimber 攀墙到顶，CeilingHanger 吊顶摆晃，均基于舌头弹簧锚点。"""
+
 from __future__ import annotations
 import math
 
@@ -15,24 +16,39 @@ HANG_IDEAL = 50.0
 CEIL_CENTER_LO = 0.25
 CEIL_CENTER_HI = 0.75
 TRAVERSE_MAX_HOPS = 12
+# 天花板自由玩横向活动安全边距：不靠屏幕两端太近
+CEIL_EDGE_MARGIN = 150.0
+
+
+def _free_roam_x(win, rng):
+    """屏幕安全区内的随机吊顶落点 x（离两端留 CEIL_EDGE_MARGIN）。"""
+    WL = win._WL
+    lo, hi = CEIL_EDGE_MARGIN, WL - CEIL_EDGE_MARGIN
+    if hi <= lo:
+        lo, hi = WL * 0.25, WL * 0.75
+    return rng.uniform(lo, hi)
 
 
 class TongueClimber:
-    def __init__(self, win, side, target=None, stop_dist=None):
+    def __init__(self, win, side, target=None, stop_dist=None, roam=False, rng=None):
         self.win = win
         self.body = win.body
         self.tongue = win.tongue
-        self.side = 1 if side > 0 else -1     # 1=右墙 / -1=左墙
-        self.target = target                  # 趋暖目标坐标，None 为自由玩耍
-        self.stop_dist = stop_dist            # 到目标此距内停止
-        self.phase = "shoot"                  # shoot → reel → settle → (ceiling)
+        self.side = 1 if side > 0 else -1  # 1=右墙 / -1=左墙
+        self.target = target  # 趋暖目标坐标，None 为自由玩耍
+        self.stop_dist = stop_dist  # 到目标此距内停止
+        self.roam = roam  # 自由玩耍：吊顶后横移随机选位（不靠两端）
+        self.rng = rng
+        self._free_x = _free_roam_x(win, rng) if (roam and rng is not None) else None
+        self.phase = "shoot"  # shoot → reel → settle → (ceiling)
         self.fails = 0
         self.timer = 0
         self.giveup = False
         self.jitter = 0
-        self.tv_hops = 0                       # 沿天花板朝中间已挪的跳数
-        self.tongue.set_targets(shoot_v=CLIMB_SHOOT_V, ideal=CLIMB_IDEAL,
-                                total=200.0, reel_rate=3.0)
+        self.tv_hops = 0  # 沿天花板朝中间已挪的跳数
+        self.tongue.set_targets(
+            shoot_v=CLIMB_SHOOT_V, ideal=CLIMB_IDEAL, total=200.0, reel_rate=3.0
+        )
 
     def _wall_x(self):
         return (self.win._WL) if self.side > 0 else 0.0
@@ -51,14 +67,19 @@ class TongueClimber:
 
         # 到目标距离内停止
         if self.target is not None and self.stop_dist is not None:
-            if math.hypot(c0.x - self.target[0], c0.y - self.target[1]) <= self.stop_dist:
+            if (
+                math.hypot(c0.x - self.target[0], c0.y - self.target[1])
+                <= self.stop_dist
+            ):
                 return True
 
         # 触发吊顶阈值取 _HL*0.5 与射程 85% 的较小值
         ceil_trigger = min(self.win._HL * 0.5, self.tongue.total * 0.85)
-        if (self.phase not in ("ceiling", "ceil_wait",
-                               "tv_settle", "tv_drop", "tv_shoot")
-                and c0.y < ceil_trigger):
+        if (
+            self.phase
+            not in ("ceiling", "ceil_wait", "tv_settle", "tv_drop", "tv_shoot")
+            and c0.y < ceil_trigger
+        ):
             self.phase = "ceiling"
 
         if self.phase == "shoot":
@@ -80,7 +101,8 @@ class TongueClimber:
                     self.fails = 0
                 else:
                     self.tongue.set_targets(
-                        ideal=max(CLIMB_IDEAL_MIN, self.tongue.ideal - 0.5))
+                        ideal=max(CLIMB_IDEAL_MIN, self.tongue.ideal - 0.5)
+                    )
             elif tg.is_idle():
                 self.fails += 1
                 if self.fails >= 3:
@@ -154,21 +176,28 @@ class TongueClimber:
         return False
 
     def _anchor_centered(self):
-        """舌头锚点是否到位：趋暖→近灯泡 x；玩耍→屏幕中间 50% 区间。"""
+        """舌头锚点是否到位：趋暖→近灯泡 x；自由玩→近随机落点；否则屏幕中间 50% 区间。"""
         a = self.tongue.anchor
         if a is None:
             return False
         if self.target is not None:
             return abs(a[0] - self.target[0]) < 60.0
+        if self.roam and self._free_x is not None:
+            return abs(a[0] - self._free_x) < 60.0
         WL = self.win._WL
         return WL * CEIL_CENTER_LO <= a[0] <= WL * CEIL_CENTER_HI
 
     def _traverse_target(self):
-        """下一跳的天花板锚点 x：趋暖→朝灯泡 x；玩耍→朝屏幕中心，受舌头射程限制。"""
+        """下一跳的天花板锚点 x：趋暖→朝灯泡 x；自由玩→朝随机落点；否则屏幕中心。"""
         c0 = self.body.chunk0
         WL = self.win._WL
-        center = self.target[0] if self.target is not None else WL * 0.5
-        reach = math.sqrt(max(1.0, self.tongue.total ** 2 - (c0.y + 5.0) ** 2)) * 0.85
+        if self.target is not None:
+            center = self.target[0]
+        elif self.roam and self._free_x is not None:
+            center = self._free_x
+        else:
+            center = WL * 0.5
+        reach = math.sqrt(max(1.0, self.tongue.total**2 - (c0.y + 5.0) ** 2)) * 0.85
         direction = 1.0 if center >= c0.x else -1.0
         step = min(reach, abs(center - c0.x))
         return clampf(c0.x + direction * step, 20.0, WL - 20.0)
@@ -180,9 +209,9 @@ class CeilingHanger:
         self.body = win.body
         self.tongue = win.tongue
         self.side = 1 if side > 0 else -1
-        self.target_x = target_x          # 趋暖目标 x，None 往中间
+        self.target_x = target_x  # 趋暖目标 x，None 往中间
         self.rng = rng
-        self.next = rng.randint(120, 320)   # 距下次小动作的间隔 tick
+        self.next = rng.randint(120, 320)  # 距下次小动作的间隔 tick
         self.timer = 0
         self.sub = None
         self.sub_t = 0
@@ -190,6 +219,7 @@ class CeilingHanger:
         self._sway_half = 12
         self._sway_dir = 1
         self._vtarget = HANG_IDEAL
+        self._roam_x = None  # 自由玩随机驻留点 x（不靠两端）
         self.tongue.set_targets(ideal=HANG_IDEAL, reel_rate=3.0)
 
     def update(self):
@@ -204,17 +234,26 @@ class CeilingHanger:
             r = self.rng.random()
             if r < 0.45:
                 self.sub, self.sub_t = "sway", self.rng.randint(27, 60)
-                self._sway_amp = self.rng.uniform(tuning.CEIL_SWAY_AMP_MIN, tuning.CEIL_SWAY_AMP_MAX)
-                self._sway_half = self.rng.randint(tuning.CEIL_SWAY_HALF_MIN, tuning.CEIL_SWAY_HALF_MAX)
+                self._sway_amp = self.rng.uniform(
+                    tuning.CEIL_SWAY_AMP_MIN, tuning.CEIL_SWAY_AMP_MAX
+                )
+                self._sway_half = self.rng.randint(
+                    tuning.CEIL_SWAY_HALF_MIN, tuning.CEIL_SWAY_HALF_MAX
+                )
                 self._sway_dir = 1 if self.rng.random() < 0.5 else -1
             elif r < 0.8:
                 self.sub, self.sub_t = "vmove", self.rng.randint(27, 60)
-                self._vtarget = HANG_IDEAL + self.rng.uniform(-tuning.CEIL_VMOVE_RANGE,
-                                                              tuning.CEIL_VMOVE_RANGE)
+                self._vtarget = HANG_IDEAL + self.rng.uniform(
+                    -tuning.CEIL_VMOVE_RANGE, tuning.CEIL_VMOVE_RANGE
+                )
             else:
                 self.sub, self.sub_t = "bigmove", 0
         if self.sub == "sway":
-            d = self._sway_dir if (self.timer // self._sway_half) % 2 == 0 else -self._sway_dir
+            d = (
+                self._sway_dir
+                if (self.timer // self._sway_half) % 2 == 0
+                else -self._sway_dir
+            )
             self.body.chunk0.vx += self._sway_amp * d
             self.sub_t -= 1
             if self.sub_t <= 0:
@@ -230,6 +269,19 @@ class CeilingHanger:
             return self._bigmove()
         return False
 
+    def _roam_toward(self):
+        """漂移方向：趋暖→朝 target_x；自由玩→朝安全区内随机驻留点。"""
+        c0 = self.body.chunk0
+        if self.target_x is not None:
+            return 1.0 if self.target_x >= c0.x else -1.0
+        WL = self.win._WL
+        lo, hi = CEIL_EDGE_MARGIN, WL - CEIL_EDGE_MARGIN
+        if hi <= lo:
+            lo, hi = WL * 0.25, WL * 0.75
+        if self._roam_x is None or abs(c0.x - self._roam_x) < 40.0:
+            self._roam_x = self.rng.uniform(lo, hi)
+        return 1.0 if self._roam_x > c0.x else -1.0
+
     def _bigmove(self):
         tg = self.tongue
         c0 = self.body.chunk0
@@ -241,7 +293,7 @@ class CeilingHanger:
         self._bm_t += 1
         if self._bm_phase == "drop":
             if self._bm_t > 8:
-                toward = (1.0 if self.target_x >= c0.x else -1.0) if self.target_x is not None else -self.side
+                toward = self._roam_toward()
                 self.win.fire_tongue(c0.x + toward * 40.0, c0.y - self.win._HL)
                 self._bm_phase = "reshoot"
                 self._bm_t = 0
@@ -256,7 +308,7 @@ class CeilingHanger:
                     tg.retract()
                     del self._bm_phase
                     return True
-                toward = (1.0 if self.target_x >= c0.x else -1.0) if self.target_x is not None else -self.side
+                toward = self._roam_toward()
                 self.win.fire_tongue(c0.x + toward * 40.0, c0.y - self.win._HL)
                 self._bm_t = 0
                 self._bm_tries += 1
