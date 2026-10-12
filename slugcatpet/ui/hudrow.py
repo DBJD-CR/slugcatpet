@@ -1,4 +1,5 @@
 """HUD 单猫行：体征 + 左键弹菜单/拖动移 HUD。"""
+
 from __future__ import annotations
 from PySide6.QtWidgets import QWidget, QLabel, QGridLayout, QFrame
 from PySide6.QtCore import Qt
@@ -13,11 +14,12 @@ from .tips import install as install_tip
 KARMA_ICON = 22
 BAR_W, BAR_H = 88, 10
 PIP = 12
-_DRAG_THRESH = 3         # 小于此判定点击而非拖动
+_DRAG_THRESH = 3  # 小于此判定点击而非拖动
 
 _BAR_BG = QColor(45, 52, 40)
 _BAR_FG = QColor(120, 180, 90)
 _ICY = QColor(120, 200, 235)
+_OXY = QColor(110, 205, 195)
 
 
 class _Bar(QWidget):
@@ -78,8 +80,8 @@ class PetRow(QFrame):
 
     def __init__(self, pet, hud):
         super().__init__()
-        self.pet = pet          # PetUnit
-        self.hud = hud          # HudPanel
+        self.pet = pet  # PetUnit
+        self.hud = hud  # HudPanel
         self.setObjectName("hudRow")
         self._drag_from = None
         self._start_tl = None
@@ -94,9 +96,9 @@ class PetRow(QFrame):
         grid.setVerticalSpacing(6)
 
         def name_lbl(text):
-            l = QLabel(text)
-            l.setObjectName("hudName")
-            return l
+            lbl = QLabel(text)
+            lbl.setObjectName("hudName")
+            return lbl
 
         self.name = QLabel()
         self.name.setObjectName("hudRowName")
@@ -115,7 +117,7 @@ class PetRow(QFrame):
         grid.addWidget(name_lbl(t("hud_stamina")), 2, 0)
         grid.addWidget(self.stam_bar, 2, 1)
 
-        self.food_pips = _Pips(self.pet.body.food_max)   # 格数按种族上限
+        self.food_pips = _Pips(self.pet.body.food_max)  # 格数按种族上限
         grid.addWidget(name_lbl(t("hud_satiety")), 3, 0)
         grid.addWidget(self.food_pips, 3, 1)
 
@@ -128,9 +130,18 @@ class PetRow(QFrame):
         grid.addWidget(self.cold_lbl, 5, 0)
         grid.addWidget(self.cold_bar, 5, 1)
         self._cold_visible = False
-        self._karma_frame = None    # 已显示帧名，去重防重复渲染
+        self._karma_frame = None  # 已显示帧名，去重防重复渲染
         self.cold_lbl.setVisible(False)
         self.cold_bar.setVisible(False)
+
+        # 氧气条：仅有水时显示，条值取剩余气量 air_frac
+        self.air_lbl = name_lbl(t("hud_air"))
+        self.air_bar = _Bar(fg=_OXY)
+        grid.addWidget(self.air_lbl, 6, 0)
+        grid.addWidget(self.air_bar, 6, 1)
+        self._air_visible = False
+        self.air_lbl.setVisible(False)
+        self.air_bar.setVisible(False)
 
         # hover 提示（随寒冷行显隐现算）
         install_tip(self, self._tip_text)
@@ -139,12 +150,22 @@ class PetRow(QFrame):
         parts = [t("hud_karma"), t("hud_stamina"), t("hud_satiety"), t("hud_affection")]
         if self._cold_visible:
             parts.append(t("hud_cold"))
+        if self._air_visible:
+            parts.append(t("hud_air"))
         return " · ".join(parts) + "\n" + t("hud_op_hint")
 
     def refresh(self) -> bool:
         """刷新本行，返回寒冷条显隐是否变化。"""
-        pets = list(getattr(self.pet.window, "pets", [self.pet]))
-        self.name.setText(pet_label(self.pet, pets))
+        win = self.pet.window
+        pets = (
+            win.all_pets()
+            if hasattr(win, "all_pets")
+            else list(getattr(win, "pets", [self.pet]))
+        )
+        disp = pet_label(self.pet, pets)
+        if getattr(self.pet, "hidden", False):
+            disp += t("hud_hidden_suffix")
+        self.name.setText(disp)
         body = self.pet.body
 
         k = int(body.karma)
@@ -154,7 +175,7 @@ class PetRow(QFrame):
             if pm is not None and not pm.isNull():
                 self.karma_icon.setPixmap(pm)
                 self._karma_frame = frame
-        kmax = int(getattr(body, "karma_max", tuning.KARMA_MAX))   # 随种族不同
+        kmax = int(getattr(body, "karma_max", tuning.KARMA_MAX))  # 随种族不同
         self.karma_val.setText(f"{k + 1}/{kmax + 1}")
 
         self.stam_bar.set_ratio(max(0.0, min(1.0, float(body.energy))))
@@ -170,6 +191,18 @@ class PetRow(QFrame):
             self.cold_bar.setVisible(show_cold)
         if show_cold:
             self.cold_bar.set_ratio(max(0.0, min(1.0, cold)))
+
+        # 氧气条：有水时显示
+        show_air = getattr(self.pet.window, "water_surface", None) is not None
+        if show_air != self._air_visible:
+            changed = True
+            self._air_visible = show_air
+            self.air_lbl.setVisible(show_air)
+            self.air_bar.setVisible(show_air)
+        if show_air:
+            self.air_bar.set_ratio(
+                max(0.0, min(1.0, float(getattr(body, "air_frac", 1.0))))
+            )
         return changed
 
     def _karma_sprite(self, frame):
@@ -183,9 +216,12 @@ class PetRow(QFrame):
         if pm.isNull():
             return pm
         if pm.width() > KARMA_ICON or pm.height() > KARMA_ICON:
-            pm = pm.scaled(KARMA_ICON, KARMA_ICON,
-                           Qt.AspectRatioMode.KeepAspectRatio,
-                           Qt.TransformationMode.SmoothTransformation)
+            pm = pm.scaled(
+                KARMA_ICON,
+                KARMA_ICON,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
         return pm
 
     # 把手：拖动移 HUD，点击弹菜单
@@ -206,7 +242,9 @@ class PetRow(QFrame):
         screen = QGuiApplication.primaryScreen().availableGeometry()
         p = self._start_tl + delta
         x = max(screen.x(), min(screen.x() + screen.width() - self.hud.width(), p.x()))
-        y = max(screen.y(), min(screen.y() + screen.height() - self.hud.height(), p.y()))
+        y = max(
+            screen.y(), min(screen.y() + screen.height() - self.hud.height(), p.y())
+        )
         self.hud.move(x, y)
         self.hud.params["hud_x"] = x
         self.hud.params["hud_y"] = y
