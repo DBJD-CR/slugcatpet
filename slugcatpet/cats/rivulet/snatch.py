@@ -1,25 +1,29 @@
-"""溪流驻留劫持 RivSnatch：光标中下带驻留→跑位后空翻掠过时劫持→落地回归日常行为、贴身携带 10s 后释放。"""
+"""溪流驻留劫持 RivSnatch：光标中下带驻留→跑位后空翻掠过时劫持→落地回归日常行为、贴身携带 5~10s 后随机释放。"""
+
 from __future__ import annotations
 
 import math
 
-from ...cats.saint.cursorlick import (BAND_LO, BAND_HI, DWELL_TICKS, SPEED_RELEASE)
+from ...cats.saint.cursorlick import DWELL_TICKS, SPEED_RELEASE
 from ...planning.ability import walk_band
-from ...planning.backflip_reach import (best_launch_hit, sweep_hit_topsafe,
-                                        takeoff_c0_h)
+from ...planning.backflip_reach import best_launch_hit, sweep_hit_topsafe, takeoff_c0_h
 from ...planning.jump_reach import SETTLE_MAX, SETTLE_VX
 from ...planning.jump_arc import get_backflip_arc
 
 PLAN_R = 30.0
 CATCH_R = 24.0
 HOLD_MAX = 700
-CARRY_TICKS = 400        # 10s
-COOLDOWN = 1200          # 成功触发冷却
-COOLDOWN_ABORT = 300     # 放弃/扑空冷却
+CARRY_TICKS_MIN = 200  # 5s（随机下限）
+CARRY_TICKS_MAX = 400  # 10s（随机上限）
+COOLDOWN = 1200  # 成功触发冷却
+COOLDOWN_ABORT = 300  # 放弃/扑空冷却
 WALK_TIMEOUT = 400
 SNATCH_TIMEOUT = 800
-ARRIVE_X = 8.0
+ARRIVE_X = 16.0
 LAUNCH_TIMEOUT = 80
+# 溪流后空翻掠夺有效离地高度范围（apex ~184px，避免任务栏深处或脚下垂直误触发）
+SNATCH_MIN_ABOVE = 35.0
+SNATCH_MAX_ABOVE = 180.0
 # 携带期异常态即提前释放
 _CARRY_BREAK = frozenset(("Dragged", "Stunned", "Dead", "Swimming"))
 
@@ -33,11 +37,15 @@ def mount_snatch(fsm):
     fsm._rs_carry = 0
 
     def in_band(cursor):
-        return (cursor is not None
-                and fsm.HL * BAND_LO <= cursor[1] <= fsm.HL * BAND_HI)
+        if cursor is None:
+            return False
+        rise = fsm.HL - cursor[1]
+        return SNATCH_MIN_ABOVE <= rise <= SNATCH_MAX_ABOVE
 
     def plan(cursor):
-        # boosted 后空翻双方向选起跳点；无解=光标太高/太远
+        # boosted 后空翻双方向选起跳点；无解=光标太高/太远/过低
+        if not in_band(cursor):
+            return None
         cx, cy = cursor
         stats = fsm.win.cat.stats
         launch_y = fsm.HL - takeoff_c0_h(stats)
@@ -45,19 +53,36 @@ def mount_snatch(fsm):
         hipx = fsm.body.chunk1.x
         best = None
         for d in (1, -1):
-            r = best_launch_hit(get_backflip_arc(stats, d, boosted=True), cx, cy,
-                                launch_y, xmin, xmax, PLAN_R, hipx)
+            r = best_launch_hit(
+                get_backflip_arc(stats, d, boosted=True),
+                cx,
+                cy,
+                launch_y,
+                xmin,
+                xmax,
+                PLAN_R,
+                hipx,
+            )
             if r is not None and (best is None or r[2] < best[2]):
-                best = (r[0], d, r[2])
+                # 过滤起跳点与光标过近导致无法形成后空翻掠过轨迹的解
+                if abs(r[0] - cx) >= 25.0:
+                    best = (r[0], d, r[2])
         return None if best is None else (best[0], best[1])
 
     def can_snatch():
         b = fsm.body
-        return (fsm.state == "IdleStand" and fsm.cursor is not None
-                and not fsm.grab.active and not fsm._exhausted
-                and not fsm._zerog() and not b.swimming
-                and fsm.win.cursor_hijack is None
-                and fsm._rs_cooldown <= 0 and fsm._dwell >= DWELL_TICKS)
+        return (
+            fsm.state == "IdleStand"
+            and fsm.cursor is not None
+            and not fsm.grab.active
+            and not fsm._exhausted
+            and not fsm._zerog()
+            and not b.swimming
+            and fsm.win.cursor_hijack is None
+            and in_band(fsm.cursor)
+            and fsm._rs_cooldown <= 0
+            and fsm._dwell >= DWELL_TICKS
+        )
 
     def release_hold():
         hj = fsm._rs_hj
@@ -72,6 +97,7 @@ def mount_snatch(fsm):
         b = fsm.body
         b.animation = None
         b.jump_boost = 0.0
+        b.walk_speed_target = None
         b.stop_walk()
         fsm._rs_dirty = False
 
@@ -81,9 +107,16 @@ def mount_snatch(fsm):
 
     def carry_tick():
         hj = fsm._rs_hj
-        bad = (hj is None or fsm.win.cursor_hijack is not hj or not hj.active
-               or fsm.grab.active or fsm.body.dead or fsm.body.swimming
-               or fsm._zerog() or fsm.state in _CARRY_BREAK)
+        bad = (
+            hj is None
+            or fsm.win.cursor_hijack is not hj
+            or not hj.active
+            or fsm.grab.active
+            or fsm.body.dead
+            or fsm.body.swimming
+            or fsm._zerog()
+            or fsm.state in _CARRY_BREAK
+        )
         fsm._rs_carry -= 1
         if bad or fsm._rs_carry <= 0:
             fsm._rs_carry = 0
@@ -130,8 +163,9 @@ def mount_snatch(fsm):
 
     def hold_lost():
         # 外部解除（Ctrl+Alt+Q/被顶替）
-        return (fsm._rs_hj is not None
-                and (fsm.win.cursor_hijack is not fsm._rs_hj or not fsm._rs_hj.active))
+        return fsm._rs_hj is not None and (
+            fsm.win.cursor_hijack is not fsm._rs_hj or not fsm._rs_hj.active
+        )
 
     def pick_at_launch(cursor):
         # 起跳瞬间按实时光标重选方向
@@ -139,9 +173,16 @@ def mount_snatch(fsm):
         stats = fsm.win.cat.stats
         first = 1 if cursor[0] >= c0.x else -1
         for d in (first, -first):
-            if sweep_hit_topsafe(get_backflip_arc(stats, d, boosted=True),
-                                 cursor[0] - c0.x, cursor[1] - c0.y,
-                                 PLAN_R, c0.y) is not None:
+            if (
+                sweep_hit_topsafe(
+                    get_backflip_arc(stats, d, boosted=True),
+                    cursor[0] - c0.x,
+                    cursor[1] - c0.y,
+                    PLAN_R,
+                    c0.y,
+                )
+                is not None
+            ):
                 return d
         return None
 
@@ -155,16 +196,25 @@ def mount_snatch(fsm):
             return
         ph = fsm._rs_phase
         if ph == "walk":
-            if (cursor is None or not in_band(cursor)
-                    or fsm._cursor_speed > SPEED_RELEASE or fsm.timer > WALK_TIMEOUT):
+            if (
+                cursor is None
+                or not in_band(cursor)
+                or fsm._cursor_speed > SPEED_RELEASE
+                or fsm.timer > WALK_TIMEOUT
+            ):
                 finish(b, ok=False)
                 return
             fsm.gfx.look_at = cursor
-            if b.on_floor() and (not b.is_moving()
-                                 or abs(b.chunk1.x - fsm._rs_x) < ARRIVE_X):
+            dist_x = abs(b.chunk1.x - fsm._rs_x)
+            overshot = (b.chunk1.vx > 0 and b.chunk1.x >= fsm._rs_x) or (
+                b.chunk1.vx < 0 and b.chunk1.x <= fsm._rs_x
+            )
+            if b.on_floor() and (not b.is_moving() or dist_x < ARRIVE_X or overshot):
                 b.stop_walk()
+                b.walk_speed_target = None
                 fsm._rs_phase = "settle"
             else:
+                b.walk_speed_target = 3.5 if dist_x < 32.0 else None
                 b.walk_to(fsm._rs_x)
             return
         if ph == "settle":
@@ -172,6 +222,7 @@ def mount_snatch(fsm):
                 finish(b, ok=False)
                 return
             b.stop_walk()
+            b.walk_speed_target = None
             fsm._rs_settle += 1
             still = abs(b.chunk0.vx) < SETTLE_VX and abs(b.chunk1.vx) < SETTLE_VX
             if b.on_floor() and (still or fsm._rs_settle > SETTLE_MAX):
@@ -187,11 +238,17 @@ def mount_snatch(fsm):
         if not b.on_floor():
             fsm._rs_airborne = True
             b.move_dir = fsm._rs_d
-            if fsm._rs_hj is None and cursor is not None and fsm.win.cursor_hijack is None:
+            if (
+                fsm._rs_hj is None
+                and cursor is not None
+                and fsm.win.cursor_hijack is None
+            ):
                 mx, my = body_mid()
                 c0 = b.chunk0
-                near = min(math.hypot(cursor[0] - mx, cursor[1] - my),
-                           math.hypot(cursor[0] - c0.x, cursor[1] - c0.y))
+                near = min(
+                    math.hypot(cursor[0] - mx, cursor[1] - my),
+                    math.hypot(cursor[0] - c0.x, cursor[1] - c0.y),
+                )
                 if near <= CATCH_R:
                     fsm._rs_hj = fsm.win.start_cursor_hold(mx, my, HOLD_MAX)
             if fsm._rs_hj is not None:
@@ -200,11 +257,11 @@ def mount_snatch(fsm):
             if fsm._rs_hj is not None:
                 clear_motion()
                 b.set_posture(True)
-                fsm._rs_carry = CARRY_TICKS
+                fsm._rs_carry = fsm.rng.randint(CARRY_TICKS_MIN, CARRY_TICKS_MAX)
                 fsm._rs_cooldown = COOLDOWN
                 fsm._transition("IdleStand")
             else:
-                finish(b, ok=False)              # 扑空
+                finish(b, ok=False)  # 扑空
         else:
             fsm._rs_launch_t += 1
             if fsm._rs_launch_t > LAUNCH_TIMEOUT:
@@ -222,5 +279,6 @@ def mount_snatch(fsm):
         fsm._rs_cooldown = cooldown
 
     fsm.register_ticker(watch)
-    fsm.register_state("RivSnatch", enter=enter, tick=st_rivsnatch,
-                       brk=brk, kill_break=brk)
+    fsm.register_state(
+        "RivSnatch", enter=enter, tick=st_rivsnatch, brk=brk, kill_break=brk
+    )
