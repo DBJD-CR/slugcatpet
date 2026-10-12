@@ -1,4 +1,5 @@
 """环境守望：他人全屏让位 + 工作区/任务栏适应 + 置顶保持，单定时器 ≤2s 轮询。"""
+
 from __future__ import annotations
 import ctypes
 from ctypes import wintypes
@@ -8,10 +9,36 @@ from PySide6.QtGui import QGuiApplication
 
 from ..platform.topmost import TopmostKeeper
 
-_TRUSTED_FULLSCREEN_STATES = {3, 4}   # D3D独占/演示态（SHQueryUserNotificationState）
+_TRUSTED_FULLSCREEN_STATES = {3, 4}  # D3D独占/演示态（SHQueryUserNotificationState）
 _SHELL_CLASSES = {"Progman", "WorkerW", "Shell_TrayWnd", "Button"}
-POLL_MS = 1000              # ≤2000ms
-_RECT_TOL = 2              # 矩形匹配容差(px)
+POLL_MS = 1000  # ≤2000ms
+_RECT_TOL = 2  # 矩形匹配容差(px)
+_BOTTOM_COVER_FRAC = 0.5  # 底边覆盖：水平重叠须超过任务栏宽度该比例（防仅遮一角误判）
+
+
+def _taskbar_rect():
+    """主任务栏(Shell_TrayWnd)矩形(物理像素)；不可得 None。"""
+    try:
+        hwnd = ctypes.windll.user32.FindWindowW("Shell_TrayWnd", None)
+        if not hwnd:
+            return None
+        rect = wintypes.RECT()
+        if ctypes.windll.user32.GetWindowRect(wintypes.HWND(hwnd), ctypes.byref(rect)):
+            return (rect.left, rect.top, rect.right, rect.bottom)
+    except Exception:
+        pass
+    return None
+
+
+def _taskbar_hidden() -> bool:
+    """主任务栏是否不可见：被全屏应用(含后台全屏)遮挡或用户设为自动隐藏。"""
+    try:
+        hwnd = ctypes.windll.user32.FindWindowW("Shell_TrayWnd", None)
+        if not hwnd:
+            return False
+        return not ctypes.windll.user32.IsWindowVisible(wintypes.HWND(hwnd))
+    except Exception:
+        return False
 
 
 def _default_state_provider() -> int:
@@ -46,15 +73,25 @@ def _default_foreground_provider():
 class EnvironmentWatcher(QObject):
     """单定时器轮询全屏与工作区变化。"""
 
-    def __init__(self, windows, pet, state_provider=None, foreground_provider=None,
-                 interval_ms: int = POLL_MS, parent=None, topmost=None):
+    def __init__(
+        self,
+        windows,
+        pet,
+        state_provider=None,
+        foreground_provider=None,
+        interval_ms: int = POLL_MS,
+        parent=None,
+        topmost=None,
+    ):
         super().__init__(parent)
         self._windows = list(windows)
         self._pet = pet
         self._state_provider = state_provider or _default_state_provider
         self._foreground_provider = foreground_provider or _default_foreground_provider
         self._fullscreen = False
-        self._topmost = topmost or TopmostKeeper(self._windows, is_suspended=lambda: self._fullscreen)
+        self._topmost = topmost or TopmostKeeper(
+            self._windows, is_suspended=lambda: self._fullscreen
+        )
         self._vis_snapshot: list[bool] | None = None
         self._area = None
         self._geo = None
@@ -80,14 +117,74 @@ class EnvironmentWatcher(QObject):
         self._topmost.start()
 
     def stop(self):
+        """停轮询与置顶钩子，并断开屏幕信号，防退出期回调已销毁窗口。"""
         self._timer.stop()
         self._topmost.stop()
+        app = QGuiApplication.instance()
+        if app is not None:
+            try:
+                app.primaryScreenChanged.disconnect(self._on_primary_changed)
+            except Exception:
+                pass
+        if self._connected_screen is not None:
+            try:
+                self._connected_screen.availableGeometryChanged.disconnect(
+                    self._on_screen_signal
+                )
+            except Exception:
+                pass
+            self._connected_screen = None
+
+    def force_top(self):
+        """手动刷新置顶：把全部窗口无条件提到最顶（解被其它程序盖住）。"""
+        try:
+            self._topmost.force_top()
+        except Exception:
+            pass
 
     # ── 轮询入口 ──
     def _on_poll(self):
         self._check_fullscreen()
+        self._check_cover()
         self._check_workspace()
         self._topmost.reassert()
+
+    # ── 底边覆盖适应 ──
+    def _check_cover(self):
+        """工作区底边是否被其它应用覆盖（最大化/域应用挡任务栏）→ 通知窗口沉到整屏底。"""
+        pet = self._pet
+        if not hasattr(pet, "set_env_top"):
+            return
+        if self._fullscreen:
+            pet.set_env_top(False)  # 全屏时窗口隐藏，无需沉底
+            return
+        pet.set_env_top(self._detect_bottom_cover())
+
+    def _detect_bottom_cover(self) -> bool:
+        """工作区底边是否被覆盖 → 地板应下延到整屏底。
+        判据一：任务栏不可见(自动隐藏)。
+        判据二：前台窗矩形纵向盖住任务栏矩形，且横向覆盖足够。"""
+        if _taskbar_hidden():
+            return True
+        fg = self._foreground_provider()
+        if fg is None:
+            return False
+        hwnd, rect, cls = fg
+        if hwnd in self._own_hwnds() or cls in _SHELL_CLASSES:
+            return False
+        tray = _taskbar_rect()
+        if tray is None:
+            return False
+        tl, tt, tr, tb = tray
+        tw = tr - tl
+        if tb - tt <= 0 or tw <= 0:
+            return False
+        fl, ft, frr, fb = rect
+        if not (ft <= tt + _RECT_TOL and fb >= tb - _RECT_TOL):
+            return False  # 纵向未盖住整条任务栏
+        covers_lr = fl <= tl + _RECT_TOL and frr >= tr - _RECT_TOL  # 左右两端都覆盖
+        overlap = min(frr, tr) - max(fl, tl)  # 与任务栏水平重叠宽度
+        return covers_lr or overlap >= tw * _BOTTOM_COVER_FRAC
 
     # ── 全屏让位 ──
     def _check_fullscreen(self):
@@ -111,18 +208,21 @@ class EnvironmentWatcher(QObject):
         if fg is None:
             return False
         hwnd, rect, cls = fg
-        if hwnd in self._own_hwnds():          # 排除自身窗（防御性）
+        if hwnd in self._own_hwnds():  # 排除自身窗（防御性）
             return False
-        if cls in _SHELL_CLASSES:              # 排除桌面/任务栏
+        if cls in _SHELL_CLASSES:  # 排除桌面/任务栏
             return False
         screen = QGuiApplication.primaryScreen()
         if screen is None:
             return False
         g = screen.geometry()
         left, top, right, bottom = rect
-        return (abs(left - g.x()) <= _RECT_TOL and abs(top - g.y()) <= _RECT_TOL
-                and abs((right - left) - g.width()) <= _RECT_TOL
-                and abs((bottom - top) - g.height()) <= _RECT_TOL)
+        return (
+            abs(left - g.x()) <= _RECT_TOL
+            and abs(top - g.y()) <= _RECT_TOL
+            and abs((right - left) - g.width()) <= _RECT_TOL
+            and abs((bottom - top) - g.height()) <= _RECT_TOL
+        )
 
     def _own_hwnds(self) -> set[int]:
         hwnds = set()
@@ -154,7 +254,11 @@ class EnvironmentWatcher(QObject):
             self._pet.resume_tick()
         except Exception:
             pass
-        snap = self._vis_snapshot if self._vis_snapshot is not None else [True] * len(self._windows)
+        snap = (
+            self._vis_snapshot
+            if self._vis_snapshot is not None
+            else [True] * len(self._windows)
+        )
         for w, vis in zip(self._windows, snap):
             if not vis:
                 continue
@@ -191,7 +295,9 @@ class EnvironmentWatcher(QObject):
         """接主屏信号，换屏时重接。"""
         if self._connected_screen is not None:
             try:
-                self._connected_screen.availableGeometryChanged.disconnect(self._on_screen_signal)
+                self._connected_screen.availableGeometryChanged.disconnect(
+                    self._on_screen_signal
+                )
             except Exception:
                 pass
         self._connected_screen = screen
