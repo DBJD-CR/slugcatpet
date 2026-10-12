@@ -1,14 +1,28 @@
-Windows 桌面宠物：让 Rain World 的蛞蝓猫住在你的屏幕上。exe 见 release 压缩包。
+# Windows 桌面宠物：让 Rain World 的蛞蝓猫住在你的屏幕上
 
-RainWorld里控制蛞蝓猫各个bodychunk拼接和行动的质点系统是C#写的，反编译后参考常量和主要函数就能足够相似的模拟。但粒子shader等效果难以复现原游戏渲染，又为了提升桌宠性能，所以我做了大量简化。
+> exe 见 release 压缩包。
+
+RainWorld 里控制蛞蝓猫各个 bodychunk 拼接和行动的质点系统是 C# 写的，反编译后参考常量和主要函数就能足够相似的模拟。但粒子 shader 等效果难以复现原游戏渲染，又为了提升桌宠性能，所以我做了大量简化。
 
 ## 运行要求
 
 - Windows 10 / 11
-- Python 3.10+
+- Python 3.11+
 - 初始化时需要已下载 Rain World，需要包含 Downpour (More Slugcats) DLC。
 
 ## 安装与运行
+
+推荐使用 [uv](https://docs.astral.sh/uv/) 安装依赖，速度远快于 pip（pip 首次安装非常慢）。若访问官方源较慢，推荐使用阿里云镜像（清华源可能缺少本项目所需的包，阿里云更齐全且 uv 下网速很快）：
+
+```powershell
+# 推荐：uv + 阿里云镜像
+uv sync --default-index https://mirrors.aliyun.com/pypi/simple/
+
+.venv\Scripts\Activate.ps1
+python run_slugcatpet.py
+```
+
+备选：pip（首次安装较慢）
 
 ```powershell
 pip install PySide6 UnityPy numpy Pillow
@@ -32,10 +46,22 @@ The mass-point system in Rain World that controls the connection and movement of
 ## Requirements
 
 - Windows 10 / 11
-- Python 3.10+
+- Python 3.11+
 - Rain World installed, including the Downpour (More Slugcats) DLC.
 
 ## Install and run
+
+[uv](https://docs.astral.sh/uv/) is recommended for installing dependencies, far faster than pip (a first-time pip install is painfully slow). If the official index is slow, the Aliyun mirror is recommended (the Tsinghua mirror may be missing packages this project needs, while Aliyun is complete and fast under uv):
+
+```powershell
+# Recommended: uv + Aliyun mirror
+uv sync --default-index https://mirrors.aliyun.com/pypi/simple/
+
+.venv\Scripts\Activate.ps1
+python run_slugcatpet.py
+```
+
+Alternative: pip (slow on first install)
 
 ```powershell
 pip install PySide6 UnityPy numpy Pillow
