@@ -1,4 +1,5 @@
 """行为参数中枢，tick=1/40s；每猫专属覆盖见 cats/<variant>.CatDef.tuning。"""
+
 from __future__ import annotations
 
 # 心情仲裁打分噪声
@@ -8,14 +9,16 @@ MOOD_NOISE_AMP = 0.20
 EXHAUST_ENTER_ENERGY = 0.1
 EXHAUST_EXIT_ENERGY = 0.50
 LIE_SETTLE_TICKS = 40
+# 睡眠被别的猫推挤后贴回锚点的阻尼系数，越大越快收住（越小越像冰面滑行）
+SLEEP_ANCHOR_EASE = 0.45
 
 # 耗能玩法体力门
 PLAY_ENERGY_GATE = 0.40
 
 # 性格接线全局旋钮
-PERS_ACT_SPREAD  = 1.0
+PERS_ACT_SPREAD = 1.0
 PERS_GATE_SPREAD = 0.20
-PERS_GATE_FLOOR  = 0.20
+PERS_GATE_FLOOR = 0.20
 
 
 # 爬竖杆权重与新鲜度
@@ -69,89 +72,133 @@ EN_EAT_RESTORE = 0.10
 KARMA_INIT = 8
 KARMA_MAX = 9
 HIBERNATE_TICKS = 3600
-REVIVE_TICKS = 50
+REVIVE_TICKS = 400  # 复活等待时间
 
 # 好感
 TEMPER_SWING_SPEED = 10.0
 TEMPER_SWING_RATE = -0.0008
-TEMPER_STUN = -0.25
+TEMPER_STUN = -0.10  # 被石头/爆炸等弄晕
+TEMPER_STUN_HUMAN = -0.15  # 被用户弄晕（轻度）
 TEMPER_KILL_CANCEL_HUMAN = -0.10
-TEMPER_KILL_REVIVED = -0.50
+TEMPER_KILL_REVIVED = -0.50  # 非用户来源真死复活
+TEMPER_KILL_HUMAN = -0.45  # 被用户弄死（复活式）
 TEMPER_FEED = 0.20
 TEMPER_LICK = 0.10
 TEMPER_DECAY = 1.0 / 180000.0
 
 # 寒冷、暴风雪、暖灯供暖、转世
 COLD_BLIZZARD_DEFAULT_OFF = True
-COLD_BLIZZARD_RAMP   = 2400
-COLD_BLIZZARD_HOLD   = 2400
-COLD_BLIZZARD_TOTAL  = 2 * COLD_BLIZZARD_RAMP + COLD_BLIZZARD_HOLD
-COLD_EXPOSURE        = 1.0
-COLD_GAIN_CLAMP_HI   = 0.0055
-COLD_LAMP_WARMTH     = 0.0005
-COLD_LAMP_RANGE      = 350.0
-COLD_LAMP_SCALE      = 0.6
+COLD_BLIZZARD_RAMP = 2400
+COLD_BLIZZARD_HOLD = 2400
+COLD_BLIZZARD_TOTAL = 2 * COLD_BLIZZARD_RAMP + COLD_BLIZZARD_HOLD
+COLD_EXPOSURE = 1.0
+COLD_GAIN_CLAMP_HI = 0.0055
+COLD_LAMP_WARMTH = 0.0005
+COLD_LAMP_RANGE = 350.0
+COLD_LAMP_SCALE = 0.6
 COLD_CRAMP_GAIN_GATE = 0.0003
-COLD_DEATH_STUN      = 50
-COLD_WARMTH_INNER    = 70.0
-COLD_NATURAL_DECAY   = 0.001
-REINCARNATE_TICKS    = 600
+COLD_DEATH_STUN = 50
+COLD_WARMTH_INNER = 70.0
+COLD_NATURAL_DECAY = 0.001
+REINCARNATE_TICKS = 600
 
 # 自主趋暖与冻醒
-COLD_SEEK_ENTER  = 0.30
-COLD_SEEK_EXIT   = 0.10
-COLD_NOSLEEP     = 0.20
-COLD_SEEK_BASE   = 3.0
+COLD_SEEK_ENTER = 0.30
+COLD_SEEK_EXIT = 0.10
+COLD_NOSLEEP = 0.20
+COLD_SEEK_BASE = 3.0
 COLD_ARRIVE_FRAC = 0.8
 
 # 雪与霜冻氛围
-SNOW_ENABLED      = True
-SNOW_MAX_FLAKES   = 50
+SNOW_ENABLED = True
+SNOW_MAX_FLAKES = 50
 SNOW_VIGNETTE_MAX = 15
 
 # 水环境（默认关）
 WATER_FULL_DEPTH = 0.55
 WATER_EASE_TICKS = 400
-WATER_STILL_EPS  = 0.15
-WATER_SPACING    = 20.0
-WATER_FLOW       = 0.08
-WATER_BODY_RGBA    = (46, 120, 150, 92)
+WATER_STILL_EPS = 0.15
+WATER_SPACING = 20.0
+WATER_FLOW = 0.08
+WATER_BODY_RGBA = (46, 120, 150, 92)
 WATER_SURFACE_RGBA = (150, 214, 232, 175)
 WATER_THREAT_SAFE_DEPTH = 60.0
 
 # 游泳/憋气/淹死（y↓）
-SWIM_ENTER            = 0.2
-SWIM_DEEP_DEPTH       = 30.0
-SWIM_DEEP_DIVE_DEPTH  = 10.0
-SWIM_DEEP_FULL        = 80.0
-SWIM_DEEP_HIP_SUB     = 0.6
-SWIM_BOOST_MIN_AIR    = 0.5
-SWIM_BOOST_DIST       = 60.0
+SWIM_ENTER = 0.22  # 入水位：浸没超过此值才进游泳
+SWIM_EXIT = 0.10  # 出水位：低于此值才离水（与入水位形成滞回，防涨水退潮时抖动抽搐）
+SWIM_SUB_FILTER = 0.35  # 浸没度每帧趋近系数（低通滤波波面噪声，0=不动 1=不滤波）
+SWIM_DEEP_DEPTH = 30.0
+SWIM_DEEP_DIVE_DEPTH = 10.0
+SWIM_DEEP_FULL = 80.0
+SWIM_DEEP_HIP_SUB = 0.6
+SWIM_BOOST_MIN_AIR = 0.5
+SWIM_BOOST_DIST = 60.0
 SWIM_SURFACE_HEAD_ABOVE = 15.0
-SWIM_LUNG_SUBMERGE    = 0.9
-SWIM_DROWN_SUB_HIP    = 0.5
-SWIM_DROWN_STEP       = 1.0 / 120.0
-SWIM_LUNG_RECOVER     = 60.0
+SWIM_LUNG_SUBMERGE = 0.9
+SWIM_DROWN_SUB_HIP = 0.5
+SWIM_DROWN_STEP = 1.0 / 120.0
+SWIM_LUNG_RECOVER = 60.0
 SWIM_LUNG_RECOVER_EXH = 240.0
-SWIM_ARRIVE_R         = 34.0
-SWIM_FETCH_SEEK_R     = 220.0
-SWIM_FETCH_REACH      = 22.0
-SWIM_VEL_MAX          = 45.0
+SWIM_ARRIVE_R = 34.0
+SWIM_FETCH_SEEK_R = 220.0
+SWIM_FETCH_REACH = 22.0
+SWIM_VEL_MAX = 45.0
 SWIM_SURFACE_REST_FAC = 0.5
 # 漂游潜深随 swim_zeal 插值
-SWIM_DRIFT_DEPTH_MIN  = 15.0
-SWIM_DRIFT_DEPTH_MAX  = 70.0
-SWIM_DRIFT_DEEP_MAX   = 260.0
-SWIM_BOOST_DIST_ZEAL  = 25.0
+SWIM_DRIFT_DEPTH_MIN = 15.0
+SWIM_DRIFT_DEPTH_MAX = 70.0
+SWIM_DRIFT_DEEP_MAX = 260.0
+SWIM_BOOST_DIST_ZEAL = 25.0
 # 圣徒落水自救：贴墙舌爬出水面
-SWIM_ESCAPE_ENERGY    = 0.35
-SWIM_ESCAPE_CD        = 200
+SWIM_ESCAPE_ENERGY = 0.35
+SWIM_ESCAPE_CD = 200
 SWIM_ESCAPE_WALL_REACH = 70.0
-PYRO_DEATH_THRESH     = 0.65    # 工匠溺水引爆阈
+PYRO_DEATH_THRESH = 0.65  # 工匠溺水引爆阈
+
+# 水中避让：双方纵向分工错身（一只小幅跳起、一只小幅下潜），从上下错开让路
+SWIM_AVOID_DIST = 26.0  # 横向/纵向贴近判定距离
+SWIM_AVOID_TRIGGER_DIST = 30.0  # 避让触发距离
+SWIM_INTENT_DOT = (
+    0.5  # 意图朝向对方的方向余弦阈（cos60°）：基于意图而非物理速度判定让路
+)
+SWIM_SHOVE_CONTACT_PAD = 6.0  # 贴身判定：chunk 半径和之外再放宽此边距方算贴身
+SWIM_PASS_TICKS = 28  # 错身持续帧数（期间持续纵向错开 + 顺流横游）
+SWIM_PASS_COOLDOWN = 26  # 错身结束后冷却，防贴邻即反复触发
+SWIM_DETOUR_DELAY = 30  # 夹心且氧气持续减少达此帧数(0.75s@40Hz)才寻路，防误触发
+SWIM_DETOUR_TICKS = 44  # 夹心自动下潜寻路时长（更长，确保绕过夹击）
+SWIM_PASS_DIVE_MIN = 48.0  # 下潜角色的错层深度下限（错开约两个身位，果断但不过深）
+SWIM_PASS_DIVE_MAX = 92.0  # 下潜角色的错层深度上限
+SWIM_PASS_SINK_GAIN = 0.10  # 下潜角色吸向错层深度的每帧系数（越小越柔和）
+SWIM_PASS_SINK_ACCEL_CAP = 1.1  # 单帧下沉加速度上限，防一扎到底
+SWIM_PASS_DIVE_KICK = 1.8  # 下潜角色起始向下冲量（轻推，靠错层深度自然下沉）
+SWIM_PASS_DIVE_CAP = 3.2  # 下潜角色竖直下速上限
+SWIM_PASS_EVADE_VX = 1.6  # 下潜角色无自身意图时的横向错身速度（保留意图时不生效）
+# 上浮角色跃起参数
+SWIM_LEAP_HEAD = 7.5  # 跃起：头向上冲量
+SWIM_LEAP_FEET = 7.0  # 跃起：臀向上冲量
+SWIM_LEAP_VX = 1.3  # 跃起横向初速
+SWIM_LEAP_EVADE_VX = 3.2  # 跃起窗口内持续逼近的横向逃逸速度
+SWIM_LEAP_FALL_CAP = 2.5  # 跃起回落入水钳速，防下潜过深
+SWIM_WALL_MARGIN = 40.0  # 水中贴墙判定边距（对齐 fsm.WALL_MARGIN，供贴墙夹脱困）
+SWIM_AVOID_CD = 26  # 避让冷却（错身结束后的短暂保护）
+# 水中体力/氧气告急：上浮水面原地休息（带滞回）
+SWIM_REST_ENERGY_IN = 0.20  # 低于此体力 → 起念上浮休息
+SWIM_REST_ENERGY_OUT = 0.45  # 高于此体力 → 结束休息（滞回上沿）
+SWIM_REST_ABOVE = 15.0  # 休息时头抬离水面高度
+SWIM_REST_ENERGY_REC_FAC = 3.0  # 休息时体力恢复倍率（× EN_REC_IDLE）
+SWIM_REST_RECOVER_MULT = 0.4  # 休息时回气 tick 数乘子（越小回气越快）
+# 水中漂游驻留：到达目标后原地悬停一会再选新点（对齐陆地 idle 节奏）
+SWIM_IDLE_HOLD_MIN = 120
+SWIM_IDLE_HOLD_MAX = 520
+SWIM_STOP_DAMP = 0.90  # 无横游意图时的水平停驻阻尼（越接近 1 停得越慢，越小越黏）
+SWIM_TURN_DOT = (
+    0.35  # 横游换向锁存阈：水平意图超过此值才改摆臂方向，悬停时沿用上帧（防抖臂）
+)
 
 # 工匠 AI 爆跳：弧线 sim 与 FSM 控制器共用参数
-PYRO_BOOST_AIR_TICKS  = 6
-PYRO_REACH_MIN_DX     = 140.0
+PYRO_BOOST_AIR_TICKS = 6
+PYRO_REACH_MIN_DX = 140.0
 
 # 工匠爆跳撒欢权重与新鲜度
 PYROROMP_BASE = 1.00
@@ -171,12 +218,12 @@ RIVFLIP_DECAY = 0.0040
 RIVFLIP_RECOVER = 0.00055
 
 # 溺水吐泡
-BUBBLE_MAX         = 40
-BUBBLE_DRAW_SCALE  = 0.45
-BUBBLE_RGBA        = (0, 1, 0)
-BUBBLE_OPACITY     = 0.25
+BUBBLE_MAX = 40
+BUBBLE_DRAW_SCALE = 0.45
+BUBBLE_RGBA = (0, 1, 0)
+BUBBLE_OPACITY = 0.25
 BUBBLE_INHERIT_VEL = 0.025
-BUBBLE_SPAWN_KICK  = 0.5
+BUBBLE_SPAWN_KICK = 0.5
 
 # idle 兜底层：东张西望
 LOOK_UPDATE_PROB = 0.025
@@ -199,6 +246,19 @@ SOCIAL_WANDER_MOVE_W = 0.6
 SOCIAL_WANDER_CROSS_W = 0.8
 SOCIAL_WANDER_STAY_GAIN = 0.05
 SOCIAL_WANDER_STAY_SPAN_FRAC = 0.06
+
+# idle 社交凝视：双方静止且靠近 → 偶尔互相盯着看
+STARE_DIST_MAX = 220.0  # 超出该距离不考虑凝视
+STARE_DIST_NEAR = 70.0  # 贴得很近，凝视概率最高
+STARE_DECAY_MULT = 0.62  # 邻近度指数衰减指数，压低中景对视频率
+STARE_BASE_PROB = 0.0018  # 最远距离处每 tick 凝视概率
+STARE_NEAR_PROB = 0.020  # 最近距离处每 tick 凝视概率
+STARE_LOCK_MIN = 55  # 凝视锁定最短帧数
+STARE_LOCK_MAX = 150  # 凝视锁定最长帧数
+STARE_COOLDOWN_MIN = 300  # 一次凝视结束后最短冷却
+STARE_COOLDOWN_MAX = 850  # 一次凝视结束后最长冷却
+STARE_ENGAGE_DIST = 22.0  # 贴身(重叠)距离，此距离内反而降低对视欲望
+STARE_ENGAGE_MULT = 0.3  # 贴身时的凝视概率倍率
 
 # 站杆顶/横杆面平衡
 BAL_FLAIL_PROB = 0.15
@@ -275,13 +335,27 @@ PLAN_HANG_MAX_RECLIMB = 3
 PLAN_SNATCH_MAX_TRIES = 2
 PLAN_SNATCH_TIMEOUT = 120
 
-# 挡路让位：被顶约 1s 顺向让开
+# 挡路让位：被顶满时长 → 朝让路点直接跳起让过（横向小让被同图层互挤抵消，故改为跳越）
 SHOVE_CONTACT_DIST = 24.0
-SHOVE_YIELD_TICKS  = 40
-SHOVE_CLEAR_PAD    = 28.0
-MAKEWAY_TIMEOUT    = 200
+SHOVE_YIELD_TICKS = 40
+SHOVE_CLEAR_PAD = 28.0
+MAKEWAY_TIMEOUT = 200
+MAKEWAY_HOP_HOLD = 8  # 让路跳持跳帧数（越大跳越高越久）
+MAKEWAY_COOLDOWN = 60  # 让路跳冷却，防落地即反复起跳
+MAKEWAY_CROWD_DIST = 90.0  # 邻近猫横向判定距离，超过阈值算“身边猫多”
+MAKEWAY_CROWD_N = 2  # 邻近猫数达到该值即优先跳起让路（防原地趴下挤叠）
+MAKEWAY_CROWD_LIE_N = 4  # 在场猫总数 > 此值时，非必要更偏好趴下让路
+MAKEWAY_CROWD_HOP_PROB = 0.2  # 猫多时的跳起让路概率（余下概率趴下）
+MAKEWAY_EDGE_MARGIN = (
+    48.0  # 距屏幕边缘小于此值视为贴边：趴不下易被边界挤压卡住，固定跳起
+)
+MAKEWAY_LIE_MIN_TICKS = 20  # 趴下让位最少保持帧数(0.5s@40Hz)，趴稳前不起身
+MAKEWAY_LIE_SNAP_TICKS = 8  # 趴下让位趴姿加速贴合帧数
 
 # 顶人方兜底跳越
 BLOCKED_JUMP_TICKS = 100
-JUMP_OVER_HOLD     = 6
+JUMP_OVER_HOLD = 6
 JUMP_OVER_COOLDOWN = 80
+
+# 让路跳横向力度基线，各族经 SlugStats.makeway_evade_vx 覆盖
+MAKEWAY_EVADE_VX = 2.8
