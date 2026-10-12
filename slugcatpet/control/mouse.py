@@ -1,4 +1,5 @@
 """输入层：命中测试 + 抓取-拖拽-甩出 + 动态穿透。"""
+
 from __future__ import annotations
 import sys
 import math
@@ -11,7 +12,7 @@ GRAB_RAD_BODY = 9.0
 GRAB_RAD_HIP = 8.0
 HOVER_PAD = 4.0
 GRAB_PAD = 5.0
-TETHER_VEL_CAP = 14.0    # 桌宠护栏
+TETHER_VEL_CAP = 14.0  # 桌宠护栏
 
 
 def hit_test(body, gfx, cursor, pad=GRAB_PAD):
@@ -58,7 +59,8 @@ class GrabController:
         self.point = None
         self.chunk = None
         self.frames = 0
-        self._last = None          # 上帧光标位置
+        self._last = None  # 上帧光标位置
+        self._raw_speed = 0.0  # 未钳制真实光标速度（供撞击伤害近似）
 
     @property
     def active(self):
@@ -84,6 +86,8 @@ class GrabController:
             vx = cx - self._last[0]
             vy = cy - self._last[1]
             sp = math.hypot(vx, vy)
+            self._raw_speed = sp  # 真实甩速（未被护栏砍），撞击时补回
+            self._set_drag_speed(sp)  # 供撞击判定：用当帧真实位移，勿用 EMA 光标速度
             if sp > TETHER_VEL_CAP:
                 k = TETHER_VEL_CAP / sp
                 vx *= k
@@ -109,19 +113,30 @@ class GrabController:
             c.vx *= k
             c.vy *= k
         c.pinned = False
+        if self.body is not None:
+            self.body._drag_speed = 0.0  # 松手即清，防自由落体被误补速
         self.chunk = None
         self.point = None
         self._last = None
+        self._raw_speed = 0.0
         return True
+
+    def _set_drag_speed(self, sp):
+        """记录拖拽真实速度（未钳制），供猫体 step 折算撞击补速。"""
+        if self.body is not None:
+            self.body._drag_speed = max(0.0, float(sp))
 
     def force_release(self):
         """强制脱手（飞升触发）：解钉但不保留速度。"""
         if self.chunk is not None:
             self.chunk.pinned = False
             self.chunk.vx = self.chunk.vy = 0.0
+        if self.body is not None:
+            self.body._drag_speed = 0.0
         self.chunk = None
         self.point = None
         self._last = None
+        self._raw_speed = 0.0
         self.frames = 0
 
 
